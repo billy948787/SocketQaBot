@@ -1,0 +1,160 @@
+#pragma once
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+
+#include "socket.hpp"
+
+namespace qabot {
+class UnixSocketImpl {
+ public:
+  UnixSocketImpl(TransportProtocol protocol, IPVersion ipVersion)
+      : _protocol(protocol), _ipVersion(ipVersion) {
+    // Initialize socket
+    _socket = socket(
+        _ipVersion == IPVersion::IPv4 ? AF_INET : AF_INET6,
+        _protocol == TransportProtocol::TCP ? SOCK_STREAM : SOCK_DGRAM, 0);
+    if (_socket < 0) {
+      throw std::runtime_error("Failed to create socket");
+    }
+  }
+
+  ~UnixSocketImpl() {
+    // Close socket
+    if (_socket >= 0) {
+      close();
+    }
+  }
+
+  void connect(const std::string& serverName, const int port) {
+    addrinfo* addrInfo;
+    getaddrinfo(serverName.c_str(), std::to_string(port).c_str(), nullptr,
+                &addrInfo);
+    if (_protocol == TransportProtocol::UDP) {
+      std::cerr << "Warning: UDP does not support connect()" << std::endl;
+      return;
+    }
+
+    int connectResult;
+
+    for (addrinfo* p = addrInfo; p != nullptr; p = p->ai_next) {
+      connectResult = ::connect(_socket, p->ai_addr, p->ai_addrlen);
+      if (connectResult == 0) {
+        std::cout << "Successfully connected to " << serverName << " ("
+                  << inet_ntoa(((sockaddr_in*)p->ai_addr)->sin_addr)
+                  << ") on port " << port << std::endl;
+        break;  // Success
+      }
+    }
+
+    if (connectResult != 0) {
+      std::cerr << "Connect error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to connect to server");
+    }
+    freeaddrinfo(addrInfo);
+  }
+
+  void send(const std::string& message) {
+    ssize_t bytesSent = ::send(_socket, message.c_str(), message.size(), 0);
+    if (bytesSent < 0) {
+      std::cerr << "Send error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to send message");
+    }
+  }
+
+  void sendTo(const std::string& serverName, const int port,
+              const std::string& message) {
+    addrinfo* addrInfo;
+    getaddrinfo(serverName.c_str(), std::to_string(port).c_str(), nullptr,
+                &addrInfo);
+    ssize_t bytesSent = 0;
+    for (addrinfo* p = addrInfo; p != nullptr; p = p->ai_next) {
+      bytesSent = ::sendto(_socket, message.c_str(), message.size(), 0,
+                           p->ai_addr, p->ai_addrlen);
+      if (bytesSent >= 0) {
+        std::cout << "Successfully sent message to " << serverName << " ("
+                  << inet_ntoa(((sockaddr_in*)p->ai_addr)->sin_addr)
+                  << ") on port " << port << std::endl;
+        break;  // Success
+      }
+    }
+    if (bytesSent < 0) {
+      std::cerr << "SendTo error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to send message");
+    }
+    if (bytesSent != message.size()) {
+      std::cerr << "Warning: Not all bytes sent" << std::endl;
+    }
+    freeaddrinfo(addrInfo);
+  }
+
+  void bind(const std::string& serverName, const int port) {
+    addrinfo* addrInfo;
+    getaddrinfo(serverName.c_str(), std::to_string(port).c_str(), nullptr,
+                &addrInfo);
+    int bindResult;
+    for (addrinfo* p = addrInfo; p != nullptr; p = p->ai_next) {
+      bindResult = ::bind(_socket, p->ai_addr, p->ai_addrlen);
+      if (bindResult == 0) {
+        std::cout << "Successfully bound to " << serverName << " ("
+                  << inet_ntoa(((sockaddr_in*)p->ai_addr)->sin_addr)
+                  << ") on port " << port << std::endl;
+        break;  // Success
+      }
+    }
+    if (bindResult != 0) {
+      std::cerr << "Bind error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to bind to server");
+    }
+    freeaddrinfo(addrInfo);
+  }
+
+  std::pair<std::string, CLientInfo> receiveFrom(size_t bufferSize) {
+    char buffer[bufferSize];
+    sockaddr addr;
+    socklen_t addrLen = sizeof(addr);
+    ssize_t bytesReceived =
+        ::recvfrom(_socket, buffer, bufferSize, 0, &addr, &addrLen);
+    if (bytesReceived < 0) {
+      std::cerr << "ReceiveFrom error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to receive message");
+    }
+
+    std::string message(buffer, bytesReceived);
+    CLientInfo clientInfo;
+    clientInfo.ip = inet_ntoa(((sockaddr_in*)&addr)->sin_addr);
+    clientInfo.port = ntohs(((sockaddr_in*)&addr)->sin_port);
+
+    return {message, clientInfo};
+  }
+
+  std::string receive(size_t bufferSize) {
+    char buffer[bufferSize];
+    ssize_t bytesReceived = ::recv(_socket, buffer, bufferSize, 0);
+    if (bytesReceived < 0) {
+      std::cerr << "Receive error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to receive message");
+    }
+
+    return std::string(buffer, bytesReceived);
+  }
+
+  void close() {
+    if (_socket >= 0) {
+      shutdown(_socket, SHUT_RDWR);
+      _socket = -1;
+    }
+  }
+
+ private:
+  TransportProtocol _protocol;
+  IPVersion _ipVersion;
+  int _socket;
+};
+}  // namespace qabot
