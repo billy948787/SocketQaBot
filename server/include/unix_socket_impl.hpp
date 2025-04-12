@@ -129,9 +129,8 @@ class UnixSocketImpl {
 
     std::string message(buffer.data(), bytesReceived);
     CLientInfo clientInfo;
-    char clientIpStr[INET6_ADDRSTRLEN];  // 足夠容納 IPv4 和 IPv6
+    char clientIpStr[INET6_ADDRSTRLEN];  
 
-    // 檢查地址族並安全提取
     if (addrStorage.ss_family == AF_INET) {
       sockaddr_in* clientAddrV4 = reinterpret_cast<sockaddr_in*>(&addrStorage);
       inet_ntop(AF_INET, &clientAddrV4->sin_addr, clientIpStr,
@@ -144,12 +143,11 @@ class UnixSocketImpl {
                 sizeof(clientIpStr));
       clientInfo.port = ntohs(clientAddrV6->sin6_port);
     } else {
-      // 未知地址族s
       clientIpStr[0] = '?';
       clientIpStr[1] = '\0';
       clientInfo.port = 0;
     }
-    clientInfo.ip = clientIpStr;  // 儲存 IP 字串
+    clientInfo.ip = clientIpStr;
 
     return {message, clientInfo};
   }
