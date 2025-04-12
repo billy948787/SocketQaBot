@@ -22,6 +22,9 @@ concept SocketImplConcept = requires(PlatformImpl platformImpl) {
   {
     PlatformImpl(std::declval<TransportProtocol>(), std::declval<IPVersion>())
   };
+
+  { platformImpl.accept() } -> std::same_as<CLientInfo>;
+  { platformImpl.listen(std::declval<int>()) };
   { platformImpl.connect(std::declval<std::string>(), std::declval<int>()) };
   {
     platformImpl.sendTo(std::declval<std::string>(), std::declval<int>(),
@@ -62,6 +65,8 @@ class Socket {
   std::pair<std::string, CLientInfo> receiveFrom(size_t bufferSize) {
     return _platformImpl.receiveFrom(bufferSize);
   }
+  CLientInfo accept() { return _platformImpl.accept(); }
+  void listen(int backlog) { _platformImpl.listen(backlog); }
   void close() { _platformImpl.close(); }
 
  private:

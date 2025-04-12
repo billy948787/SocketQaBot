@@ -129,7 +129,7 @@ class UnixSocketImpl {
 
     std::string message(buffer.data(), bytesReceived);
     CLientInfo clientInfo;
-    char clientIpStr[INET6_ADDRSTRLEN];  
+    char clientIpStr[INET6_ADDRSTRLEN];
 
     if (addrStorage.ss_family == AF_INET) {
       sockaddr_in* clientAddrV4 = reinterpret_cast<sockaddr_in*>(&addrStorage);
@@ -154,7 +154,10 @@ class UnixSocketImpl {
 
   std::string receive(size_t bufferSize) {
     std::vector<char> buffer(bufferSize);
+
     ssize_t bytesReceived = ::recv(_socket, buffer.data(), bufferSize, 0);
+    std::cout << "Received message: "
+              << std::string(buffer.data(), bytesReceived) << std::endl;
     if (bytesReceived < 0) {
       std::cerr << "Receive error: " << strerror(errno) << std::endl;
       throw std::runtime_error("Failed to receive message");
@@ -163,11 +166,52 @@ class UnixSocketImpl {
     return std::string(buffer.data(), bytesReceived);
   }
 
+  CLientInfo accept() {
+    sockaddr_storage addrStorage;
+    socklen_t addrLen = sizeof(addrStorage);
+    if (::accept(_socket, (sockaddr*)&addrStorage, &addrLen) < 0) {
+      std::cerr << "Accept error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to accept connection");
+    }
+    CLientInfo clientInfo;
+    char clientIpStr[INET6_ADDRSTRLEN];
+    if (addrStorage.ss_family == AF_INET) {
+      sockaddr_in* clientAddrV4 = reinterpret_cast<sockaddr_in*>(&addrStorage);
+      inet_ntop(AF_INET, &clientAddrV4->sin_addr, clientIpStr,
+                sizeof(clientIpStr));
+      clientInfo.port = ntohs(clientAddrV4->sin_port);
+    } else if (addrStorage.ss_family == AF_INET6) {
+      sockaddr_in6* clientAddrV6 =
+          reinterpret_cast<sockaddr_in6*>(&addrStorage);
+      inet_ntop(AF_INET6, &clientAddrV6->sin6_addr, clientIpStr,
+                sizeof(clientIpStr));
+      clientInfo.port = ntohs(clientAddrV6->sin6_port);
+    } else {
+      clientIpStr[0] = '?';
+      clientIpStr[1] = '\0';
+      clientInfo.port = 0;
+    }
+    clientInfo.ip = clientIpStr;
+    std::cout << "Accepted connection from " << clientInfo.ip << ":"
+              << clientInfo.port << std::endl;
+
+    return clientInfo;
+  }
+
+  void listen(int backlog) {
+    int listenResult = ::listen(_socket, backlog);
+    if (listenResult < 0) {
+      std::cerr << "Listen error: " << strerror(errno) << std::endl;
+      throw std::runtime_error("Failed to listen on socket");
+    }
+  }
+
   void close() {
     if (_socket >= 0) {
       shutdown(_socket, SHUT_RDWR);
       _socket = -1;
     }
+    std::cout << "Socket closed." << std::endl;
   }
 
  private:

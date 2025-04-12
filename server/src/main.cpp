@@ -6,11 +6,17 @@
 int main() {
   qabot::Socket<qabot::UnixSocketImpl> socket(qabot::TransportProtocol::TCP,
                                               qabot::IPVersion::IPv4);
+  socket.bind("localhost", 38763);
+  socket.listen(5);
 
-  try {
-    socket.connect("youtube.com", 443);
-  } catch (const std::exception& e) {
-    std::cerr << "Error: " << e.what() << std::endl;
-    return 1;
+  while (true) {
+    auto clientInfo = socket.accept();
+    std::cout << "Accepted connection from " << clientInfo.ip << ":"
+              << clientInfo.port << std::endl;
+
+    std::string message = socket.receive(1024);
+    std::cout << "Received message: " << message << std::endl;
+
+    socket.sendTo(clientInfo.ip, clientInfo.port, "Hello from server!");
   }
 }
