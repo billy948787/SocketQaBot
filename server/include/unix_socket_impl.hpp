@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 #include "socket.hpp"
 
@@ -116,33 +117,52 @@ class UnixSocketImpl {
   }
 
   std::pair<std::string, CLientInfo> receiveFrom(size_t bufferSize) {
-    char buffer[bufferSize];
-    sockaddr addr;
-    socklen_t addrLen = sizeof(addr);
-    ssize_t bytesReceived =
-        ::recvfrom(_socket, buffer, bufferSize, 0, &addr, &addrLen);
+    std::vector<char> buffer(bufferSize);
+    sockaddr_storage addrStorage;
+    socklen_t addrLen = sizeof(addrStorage);
+    ssize_t bytesReceived = ::recvfrom(_socket, buffer.data(), bufferSize, 0,
+                                       (sockaddr*)&addrStorage, &addrLen);
     if (bytesReceived < 0) {
       std::cerr << "ReceiveFrom error: " << strerror(errno) << std::endl;
       throw std::runtime_error("Failed to receive message");
     }
 
-    std::string message(buffer, bytesReceived);
+    std::string message(buffer.data(), bytesReceived);
     CLientInfo clientInfo;
-    clientInfo.ip = inet_ntoa(((sockaddr_in*)&addr)->sin_addr);
-    clientInfo.port = ntohs(((sockaddr_in*)&addr)->sin_port);
+    char clientIpStr[INET6_ADDRSTRLEN];  // 足夠容納 IPv4 和 IPv6
+
+    // 檢查地址族並安全提取
+    if (addrStorage.ss_family == AF_INET) {
+      sockaddr_in* clientAddrV4 = reinterpret_cast<sockaddr_in*>(&addrStorage);
+      inet_ntop(AF_INET, &clientAddrV4->sin_addr, clientIpStr,
+                sizeof(clientIpStr));
+      clientInfo.port = ntohs(clientAddrV4->sin_port);
+    } else if (addrStorage.ss_family == AF_INET6) {
+      sockaddr_in6* clientAddrV6 =
+          reinterpret_cast<sockaddr_in6*>(&addrStorage);
+      inet_ntop(AF_INET6, &clientAddrV6->sin6_addr, clientIpStr,
+                sizeof(clientIpStr));
+      clientInfo.port = ntohs(clientAddrV6->sin6_port);
+    } else {
+      // 未知地址族s
+      clientIpStr[0] = '?';
+      clientIpStr[1] = '\0';
+      clientInfo.port = 0;
+    }
+    clientInfo.ip = clientIpStr;  // 儲存 IP 字串
 
     return {message, clientInfo};
   }
 
   std::string receive(size_t bufferSize) {
-    char buffer[bufferSize];
-    ssize_t bytesReceived = ::recv(_socket, buffer, bufferSize, 0);
+    std::vector<char> buffer(bufferSize);
+    ssize_t bytesReceived = ::recv(_socket, buffer.data(), bufferSize, 0);
     if (bytesReceived < 0) {
       std::cerr << "Receive error: " << strerror(errno) << std::endl;
       throw std::runtime_error("Failed to receive message");
     }
 
-    return std::string(buffer, bytesReceived);
+    return std::string(buffer.data(), bytesReceived);
   }
 
   void close() {

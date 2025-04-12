@@ -49,7 +49,7 @@ class Socket {
   }
   void sendTo(const std::string& serverName, const int port,
               const std::string& message) {
-    _platformImpl.send(message);
+    _platformImpl.sendTo(serverName, port, message);
   }
   void send(const std::string& message) { _platformImpl.send(message); }
 
