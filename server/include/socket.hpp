@@ -23,7 +23,7 @@ concept SocketImplConcept = requires(PlatformImpl platformImpl) {
     PlatformImpl(std::declval<TransportProtocol>(), std::declval<IPVersion>())
   };
 
-  { platformImpl.accept() } -> std::same_as<CLientInfo>;
+  { platformImpl.accept() } -> std::same_as<ClientInfo>;
   { platformImpl.listen(std::declval<int>()) };
   { platformImpl.connect(std::declval<std::string>(), std::declval<int>()) };
   {
@@ -36,7 +36,7 @@ concept SocketImplConcept = requires(PlatformImpl platformImpl) {
   { platformImpl.receive(std::declval<size_t>()) } -> std::same_as<std::string>;
   {
     platformImpl.receiveFrom(std::declval<size_t>())
-  } -> std::same_as<std::pair<std::string, CLientInfo>>;
+  } -> std::same_as<std::pair<std::string, ClientInfo>>;
   { platformImpl.close() };
 };
 template <SocketImplConcept PlatformImpl>
@@ -62,10 +62,10 @@ class Socket {
   std::string receive(size_t bufferSize) {
     return _platformImpl.receive(bufferSize);
   }
-  std::pair<std::string, CLientInfo> receiveFrom(size_t bufferSize) {
+  std::pair<std::string, ClientInfo> receiveFrom(size_t bufferSize) {
     return _platformImpl.receiveFrom(bufferSize);
   }
-  CLientInfo accept() { return _platformImpl.accept(); }
+  ClientInfo accept() { return _platformImpl.accept(); }
   void listen(int backlog) { _platformImpl.listen(backlog); }
   void close() { _platformImpl.close(); }
 

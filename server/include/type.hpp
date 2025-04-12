@@ -1,6 +1,7 @@
+#pragma once
 #include <string>
 namespace qabot {
-struct CLientInfo {
+struct ClientInfo {
   std::string ip;
   int port;
 };
