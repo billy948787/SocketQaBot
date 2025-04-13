@@ -1,4 +1,5 @@
 #pragma once
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2def.h>
 #include <ws2ipdef.h>
@@ -243,3 +244,4 @@ class WindowsSocketImpl {
   SOCKET _socket;
 };
 }  // namespace qabot
+#endif  // _WIN32

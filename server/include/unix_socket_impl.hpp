@@ -1,4 +1,5 @@
 #pragma once
+#ifndef _WIN32
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -184,8 +185,6 @@ class UnixSocketImpl {
     std::vector<char> buffer(bufferSize);
 
     ssize_t bytesReceived = ::recv(_socket, buffer.data(), bufferSize, 0);
-    std::cout << "Received message: "
-              << std::string(buffer.data(), bytesReceived) << std::endl;
     if (bytesReceived < 0) {
       std::cerr << "Receive error: " << strerror(errno) << std::endl;
       throw std::runtime_error("Failed to receive message");
@@ -252,3 +251,4 @@ class UnixSocketImpl {
   int _socket;
 };
 }  // namespace qabot
+#endif  // _WIN32
