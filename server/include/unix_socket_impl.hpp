@@ -26,11 +26,39 @@ class UnixSocketImpl {
     }
   }
 
+  UnixSocketImpl(const int socket, TransportProtocol protocol,
+                 IPVersion ipVersion)
+      : _socket(socket), _protocol(protocol), _ipVersion(ipVersion) {}
+
   ~UnixSocketImpl() {
     // Close socket
     if (_socket >= 0) {
       close();
     }
+  }
+
+  UnixSocketImpl(const UnixSocketImpl& other) = delete;
+  UnixSocketImpl& operator=(const UnixSocketImpl& other) = delete;
+
+  UnixSocketImpl(UnixSocketImpl&& other) noexcept
+      : _socket(other._socket),
+        _protocol(other._protocol),
+        _ipVersion(other._ipVersion) {
+    other._socket = -1;  // Prevent double close
+  }
+
+  UnixSocketImpl& operator=(UnixSocketImpl&& other) {
+    if (this != &other) {
+      if (_socket >= 0) {
+        close();
+      }
+      _socket = other._socket;
+      _protocol = other._protocol;
+      _ipVersion = other._ipVersion;
+
+      other._socket = -1;  // Prevent double close
+    }
+    return *this;
   }
 
   void connect(const std::string& serverName, const int port) {
@@ -166,10 +194,11 @@ class UnixSocketImpl {
     return std::string(buffer.data(), bytesReceived);
   }
 
-  ClientInfo accept() {
+  UnixSocketImpl accept() {
     sockaddr_storage addrStorage;
     socklen_t addrLen = sizeof(addrStorage);
-    if (::accept(_socket, (sockaddr*)&addrStorage, &addrLen) < 0) {
+    int clientSocket = ::accept(_socket, (sockaddr*)&addrStorage, &addrLen);
+    if (clientSocket < 0) {
       std::cerr << "Accept error: " << strerror(errno) << std::endl;
       throw std::runtime_error("Failed to accept connection");
     }
@@ -195,7 +224,7 @@ class UnixSocketImpl {
     std::cout << "Accepted connection from " << clientInfo.ip << ":"
               << clientInfo.port << std::endl;
 
-    return clientInfo;
+    return UnixSocketImpl(clientSocket, _protocol, _ipVersion);
   }
 
   void listen(int backlog) {
@@ -213,6 +242,9 @@ class UnixSocketImpl {
     }
     std::cout << "Socket closed." << std::endl;
   }
+
+  TransportProtocol getProtocol() const { return _protocol; }
+  IPVersion getIPVersion() const { return _ipVersion; }
 
  private:
   TransportProtocol _protocol;

@@ -11,18 +11,14 @@ using SocketImpl = qabot::UnixSocketImpl;
 
 int main() {
   qabot::Socket<SocketImpl> socket(qabot::TransportProtocol::TCP,
-                                              qabot::IPVersion::IPv4);
+                                   qabot::IPVersion::IPv4);
   socket.bind("localhost", 38763);
   socket.listen(5);
 
   while (true) {
-    auto clientInfo = socket.accept();
-    std::cout << "Accepted connection from " << clientInfo.ip << ":"
-              << clientInfo.port << std::endl;
+    auto clientSocket = socket.accept();
 
-    std::string message = socket.receive(1024);
+    std::string message = clientSocket.receive(1024);
     std::cout << "Received message: " << message << std::endl;
-
-    socket.sendTo(clientInfo.ip, clientInfo.port, "Hello from server!");
   }
 }

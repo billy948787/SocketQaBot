@@ -25,11 +25,39 @@ class WindowsSocketImpl {
       throw std::runtime_error("Failed to create socket");
     }
   }
+
+  WindowsSocketImpl(SOCKET socket, TransportProtocol protocol,
+                    IPVersion ipVersion)
+      : _socket(socket), _protocol(protocol), _ipVersion(ipVersion) {}
   ~WindowsSocketImpl() {
     // Close socket
     if (_socket != INVALID_SOCKET) {
       close();
     }
+  }
+
+  WindowsSocketImpl(const WindowsSocketImpl& other) = delete;
+  WindowsSocketImpl& operator=(const WindowsSocketImpl& other) = delete;
+
+  WindowsSocketImpl(WindowsSocketImpl&& other) noexcept
+      : _socket(other._socket),
+        _protocol(other._protocol),
+        _ipVersion(other._ipVersion) {
+    other._socket = INVALID_SOCKET;  // Prevent double close
+  }
+
+  WindowsSocketImpl& operator=(WindowsSocketImpl& other) {
+    if (this != &other) {
+      if (_socket != INVALID_SOCKET) {
+        close();
+      }
+      _socket = other._socket;
+      _protocol = other._protocol;
+      _ipVersion = other._ipVersion;
+
+      other._socket = INVALID_SOCKET;  // Prevent double close
+    }
+    return *this;
   }
 
   void connect(const std::string& serverName, const int port) {
@@ -160,7 +188,7 @@ class WindowsSocketImpl {
     return {std::string(buffer.data(), bytesReceived), clientInfo};
   }
 
-  ClientInfo accept() {
+  WindowsSocketImpl accept() {
     sockaddr_storage addrStorage;
     socklen_t addrLen = sizeof(addrStorage);
     SOCKET clientSocket = ::accept(_socket, (sockaddr*)&addrStorage, &addrLen);
@@ -189,7 +217,7 @@ class WindowsSocketImpl {
     }
     clientInfo.ip = clientIpStr;
 
-    return clientInfo;
+    return WindowsSocketImpl(clientSocket, _protocol, _ipVersion);
   }
 
   void listen(int backlog) {
@@ -205,6 +233,9 @@ class WindowsSocketImpl {
       _socket = INVALID_SOCKET;
     }
   }
+
+  TransportProtocol getProtocol() const { return _protocol; }
+  IPVersion getIPVersion() const { return _ipVersion; }
 
  private:
   TransportProtocol _protocol;
