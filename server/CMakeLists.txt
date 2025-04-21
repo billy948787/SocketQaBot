@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD 23)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+add_compile_options(
+    -fexperimental-library
+    -save-temps
+)
+endif()
+
 file(GLOB_RECURSE SOURCES
     src/*.cpp
 )
@@ -19,15 +27,13 @@ FetchContent_MakeAvailable(json)
 
 
 # if compiler is clang, set compiler options to experimental
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-add_compile_options(
-    -fexperimental-library
-    -save-temps
-)
-endif()
     
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
+)
+
+include_directories(
+    ${CMAKE_SOURCE_DIR}/lib/thread-pool/include
 )
         
 if(WIN32)

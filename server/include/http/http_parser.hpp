@@ -4,7 +4,7 @@
 #include <sstream>
 #include <string>
 
-#include "http_request.hpp"
+#include "http_types.hpp"
 
 namespace qabot::http {
 class HttpParser {
@@ -68,6 +68,39 @@ class HttpParser {
     }
 
     return HttpRequest{.method = requestMethod, .path = path, .body = body};
+  }
+
+  HttpResponse parseResponse(const std::string& rawHttp) {
+    std::stringstream responseStream(rawHttp);
+    std::string line;
+
+    // get first line of header
+    std::getline(responseStream, line);
+
+    std::stringstream lineStream(line);
+    std::string version;
+    std::string statusCode;
+    std::string statusMessage;
+
+    lineStream >> version >> statusCode >> statusMessage;
+
+    if (statusCode != "200") {
+      throw std::runtime_error(statusCode);
+    }
+
+    // get each line of header
+    while (getline(responseStream, line)) {
+      if (line == "\r") {
+        break;  // End of headers
+      }
+    }
+
+    // get body content
+    std::string body = responseStream.str().substr(responseStream.tellg());
+
+    return HttpResponse{.statusCode = std::stoi(statusCode),
+                        .statusMessage = statusMessage,
+                        .body = body};
   }
 };
 }  // namespace qabot::http

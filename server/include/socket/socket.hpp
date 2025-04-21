@@ -23,6 +23,8 @@ concept SocketImplConcept = requires(PlatformImpl platformImpl) {
     PlatformImpl(std::declval<TransportProtocol>(), std::declval<IPVersion>())
   };
 
+  { platformImpl.init() } -> std::same_as<bool>;
+
   { platformImpl.accept() } -> std::same_as<PlatformImpl>;
   { platformImpl.listen(std::declval<int>()) };
   { platformImpl.connect(std::declval<std::string>(), std::declval<int>()) };
@@ -47,7 +49,18 @@ class Socket {
   Socket(TransportProtocol protocol, IPVersion ipVersion)
       : _protocol(protocol),
         _ipVersion(ipVersion),
-        _platformImpl(protocol, ipVersion) {}
+        _platformImpl(protocol, ipVersion) {
+    _platformImpl.init();
+  }
+  Socket(Socket&& other) noexcept
+      : _protocol(other._protocol),
+        _ipVersion(other._ipVersion),
+        _platformImpl(std::move(other._platformImpl)) {}
+
+  Socket(PlatformImpl& platformImpl)
+      : _protocol(platformImpl.getProtocol()),
+        _ipVersion(platformImpl.getIPVersion()),
+        _platformImpl(std::move(platformImpl)) {}
   ~Socket() { _platformImpl.close(); }
   void connect(const std::string& serverName, const int port) {
     _platformImpl.connect(serverName, port);
@@ -75,12 +88,17 @@ class Socket {
   void close() { _platformImpl.close(); }
 
  private:
-  Socket(PlatformImpl& platformImpl)
-      : _protocol(platformImpl.getProtocol()),
-        _ipVersion(platformImpl.getIPVersion()),
-        _platformImpl(std::move(platformImpl)) {}
   TransportProtocol _protocol;
   IPVersion _ipVersion;
   PlatformImpl _platformImpl;
+
+  static bool inited;
+  static bool init() {
+    if (!inited) {
+      // Initialize the platform-specific socket implementation
+      inited = true;
+    }
+    return inited;
+  }
 };
 }  // namespace qabot::socket
