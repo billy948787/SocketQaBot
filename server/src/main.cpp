@@ -3,9 +3,10 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
-#include "http/http_parser.hpp"
+#include "http/http_parse.hpp"
 #include "http/http_serialize.hpp"
 #include "scope_manager/scope_manager.hpp"
+#include "socket/secure_socket.hpp"
 #include "socket/socket.hpp"
 #include "socket/socket_awaitable.hpp"
 #include "task/task.hpp"
@@ -76,22 +77,46 @@ qabot::task::Task<void> serverAcceptLoop(
 }
 
 int main() {
-  qabot::socket::Socket<SocketImpl> socket(
+  qabot::socket::Socket<SocketImpl> listeningSocket(
       qabot::socket::TransportProtocol::TCP, qabot::socket::IPVersion::IPv4);
-  socket.bind("localhost", 38763);
 
-  socket.listen(5);
-  // Start the server accept loop
-  try {
-    auto serverTask = serverAcceptLoop(socket);
+  qabot::socket::SecureSocket<SocketImpl> secureSocket(
+      qabot::socket::TransportProtocol::TCP, qabot::socket::IPVersion::IPv4);
 
-    while (true) {
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+  secureSocket.connect("https://generativelanguage.googleapis.com", 443);
 
-      // Clean up completed tasks
-      qabot::scope_manager::ScopeManager::getInstance().cleanUpTask();
-    }
-  } catch (const std::exception& e) {
-    std::cerr << "Error in server accept loop: " << e.what() << std::endl;
-  }
+  nlohmann::json jsonData = {
+      {"contents", {{"parts", {{"text", "Explain how AI works"}}}}}};
+
+  auto request = qabot::http::serializeRequest(
+      qabot::http::RequestMethod::POST,
+      "https://generativelanguage.googleapis.com/v1beta/models/"
+      "gemini-2.0-flash:generateContent?key="
+      {{"Content-Type",
+        qabot::http::contentTypeToString(qabot::http::ContentType::JSON)
+
+      }},
+      jsonData.dump());
+
+  secureSocket.send(request);
+
+  auto response = secureSocket.receive(1024);
+  std::cout << "Response: " << response << std::endl;
+
+  // listeningSocket.bind("localhost", 38763);
+
+  // listeningSocket.listen(5);
+  // // Start the server accept loop
+  // try {
+  //   auto serverTask = serverAcceptLoop(listeningSocket);
+
+  //   while (true) {
+  //     std::this_thread::sleep_for(std::chrono::seconds(5));
+
+  //     // Clean up completed tasks
+  //     qabot::scope_manager::ScopeManager::getInstance().cleanUpTask();
+  //   }
+  // } catch (const std::exception& e) {
+  //   std::cerr << "Error in server accept loop: " << e.what() << std::endl;
+  // }
 }

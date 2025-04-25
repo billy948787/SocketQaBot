@@ -4,8 +4,6 @@
 #include <string>
 #include <utility>
 
-#include "type.hpp"
-
 namespace qabot::socket {
 enum class TransportProtocol {
   TCP,
@@ -15,7 +13,12 @@ enum class IPVersion {
   IPv4,
   IPv6,
 };
-
+struct ClientInfo {
+  std::string ip;
+  int port;
+};
+// This is a concept to check whether a type is a socket implementation
+// The type must have the following methods:
 template <typename PlatformImpl>
 concept SocketImplConcept = requires(PlatformImpl platformImpl) {
   // Check if the constructor takes TransportProtocol and IPVersion
@@ -40,6 +43,8 @@ concept SocketImplConcept = requires(PlatformImpl platformImpl) {
     platformImpl.receiveFrom(std::declval<size_t>())
   } -> std::same_as<std::pair<std::string, ClientInfo>>;
   { platformImpl.close() };
+  { platformImpl.getSocketFD() } -> std::same_as<int>;
+
   { platformImpl.getProtocol() } -> std::same_as<TransportProtocol>;
   { platformImpl.getIPVersion() } -> std::same_as<IPVersion>;
 };
@@ -91,14 +96,5 @@ class Socket {
   TransportProtocol _protocol;
   IPVersion _ipVersion;
   PlatformImpl _platformImpl;
-
-  static bool inited;
-  static bool init() {
-    if (!inited) {
-      // Initialize the platform-specific socket implementation
-      inited = true;
-    }
-    return inited;
-  }
 };
 }  // namespace qabot::socket

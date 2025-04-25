@@ -1,9 +1,4 @@
-#pragma once
-#include <iostream>
-#include <sstream>
-#include <unordered_map>
-
-#include "http.hpp"
+#include "http/http_serialize.hpp"
 
 namespace qabot::http {
 std::string serializeRequest(
@@ -26,7 +21,6 @@ std::string serializeRequest(
   }
   return requestStream.str();
 }
-
 std::string serializeResponse(
     const ResponseStatus statusCode,
     const std::unordered_map<std::string, std::string>& headers,
@@ -42,4 +36,4 @@ std::string serializeResponse(
   responseStream << "\r\n" << body;
   return responseStream.str();
 }
-}  // namespace qabot::http
+}
