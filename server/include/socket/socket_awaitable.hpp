@@ -1,6 +1,7 @@
 #pragma once
 #include <thread_pool/thread_pool.h>
 
+#include <atomic>
 #include <coroutine>
 #include <exception>
 #include <functional>
@@ -11,18 +12,15 @@
 namespace qabot::socket {
 template <typename T>
 class SocketAwaitable {
+  struct SharedState {
+    std::exception_ptr _exceptionPtr = nullptr;
+    std::optional<T> _result;
+    std::coroutine_handle<> handle = nullptr;
+  };
+
  public:
-  template <typename Class, typename... Args>
-  SocketAwaitable(T (Class::*funcPtr)(Args...), Class* instance, Args&&... args)
-      : _func(
-            [funcPtr, instance,
-             argsTuple = std::make_tuple(std::forward<Args>(args)...)]() -> T {
-              return std::apply(
-                  [&](auto&&... tupleArgs) -> T {
-                    return std::invoke(funcPtr, instance, tupleArgs...);
-                  },
-                  std::move(argsTuple));
-            }) {}
+  SocketAwaitable(std::function<T()>&& func)
+      : _func(std::move(func)), _sharedState(std::make_shared<SharedState>()) {}
 
   bool await_ready() {
     // Check if the socket is ready for I/O operations
@@ -37,30 +35,44 @@ class SocketAwaitable {
       throw std::runtime_error("Function not set");
     }
 
-    (void)thread_pool.enqueue([&handle, this]() {
+    _sharedState->handle = handle;
+
+    auto state = _sharedState;
+    auto func = std::move(_func);
+
+    (void)thread_pool.enqueue([state, func]() {
       while (true) {
         try {
           // Call the function and resume the coroutine
-          _result.emplace(_func());
+          state->_result.emplace(std::move(func()));
+
           // Resume the coroutine
           break;
+        } catch (const std::system_error& e) {
+          // Handle exception
+          if (e.code() != std::errc::operation_would_block &&
+              e.code() != std::errc::resource_unavailable_try_again) {
+            state->_exceptionPtr = std::current_exception();
+          }
         } catch (const std::exception& e) {
-          // Handle exceptions
-          _exceptionPtr = std::current_exception();
+          // Handle other exceptions
+          state->_exceptionPtr = std::current_exception();
         }
       }
-      handle.resume();
+      if (!state->handle.done()) {
+        state->handle.resume();
+      }
     });
 
     // Call the function with the provided arguments
   }
 
   T& await_resume() {
-    if (_exceptionPtr) {
-      std::rethrow_exception(_exceptionPtr);
+    if (_sharedState->_exceptionPtr) {
+      std::rethrow_exception(_sharedState->_exceptionPtr);
     }
-    if (_result.has_value()) {
-      return *_result;
+    if (_sharedState->_result.has_value()) {
+      return *_sharedState->_result;
     } else {
       throw std::runtime_error("Function did not return a value");
     }
@@ -68,12 +80,14 @@ class SocketAwaitable {
 
  private:
   std::function<T()> _func;
-  std::exception_ptr _exceptionPtr = nullptr;
-
-  std::optional<T> _result;
+  std::shared_ptr<SharedState> _sharedState;
 };
 template <>
 class SocketAwaitable<void> {
+  struct SharedState {
+    std::exception_ptr _exceptionPtr = nullptr;
+  };
+
  public:
   template <typename Class, typename... Args>
   SocketAwaitable(void (Class::*funcPtr)(Args...), Class* instance,
@@ -107,7 +121,7 @@ class SocketAwaitable<void> {
           _func();
         } catch (const std::exception& e) {
           // Handle exception
-          _exceptionPtr = std::current_exception();
+          _sharedState->_exceptionPtr = std::current_exception();
         }
       }
       handle.resume();
@@ -115,13 +129,13 @@ class SocketAwaitable<void> {
   }
 
   void await_resume() {
-    if (_exceptionPtr) {
-      std::rethrow_exception(_exceptionPtr);
+    if (_sharedState->_exceptionPtr) {
+      std::rethrow_exception(_sharedState->_exceptionPtr);
     }
   }
 
  private:
   std::function<void()> _func;
-  std::exception_ptr _exceptionPtr = nullptr;
+  std::shared_ptr<SharedState> _sharedState;
 };
 }  // namespace qabot::socket

@@ -85,8 +85,9 @@ class UnixSocketImpl {
     }
 
     if (connectResult != 0) {
-      std::cerr << "Connect error: " << strerror(errno) << std::endl;
-      throw std::runtime_error("Failed to connect to server");
+      throw std::system_error(
+          errno, std::generic_category(),
+          "Failed to connect to " + serverName + ":" + std::to_string(port));
     }
     freeaddrinfo(addrInfo);
   }
@@ -94,8 +95,8 @@ class UnixSocketImpl {
   void send(const std::string& message) {
     ssize_t bytesSent = ::send(_socket, message.c_str(), message.size(), 0);
     if (bytesSent < 0) {
-      std::cerr << "Send error: " << strerror(errno) << std::endl;
-      throw std::runtime_error("Failed to send message");
+      throw std::system_error(errno, std::generic_category(),
+                              "Failed to send message");
     }
   }
 
@@ -116,8 +117,9 @@ class UnixSocketImpl {
       }
     }
     if (bytesSent < 0) {
-      std::cerr << "SendTo error: " << strerror(errno) << std::endl;
-      throw std::runtime_error("Failed to send message");
+      throw std::system_error(errno, std::generic_category(),
+                              "Failed to send message to " + serverName + ":" +
+                                  std::to_string(port));
     }
     if (bytesSent != message.size()) {
       std::cerr << "Warning: Not all bytes sent" << std::endl;
@@ -153,8 +155,8 @@ class UnixSocketImpl {
     ssize_t bytesReceived = ::recvfrom(_socket, buffer.data(), bufferSize, 0,
                                        (sockaddr*)&addrStorage, &addrLen);
     if (bytesReceived < 0) {
-      std::cerr << "ReceiveFrom error: " << strerror(errno) << std::endl;
-      throw std::runtime_error("Failed to receive message");
+      throw std::system_error(errno, std::generic_category(),
+                              "Failed to receive message");
     }
 
     std::string message(buffer.data(), bytesReceived);
@@ -187,8 +189,8 @@ class UnixSocketImpl {
 
     ssize_t bytesReceived = ::recv(_socket, buffer.data(), bufferSize, 0);
     if (bytesReceived < 0) {
-      std::cerr << "Receive error: " << strerror(errno) << std::endl;
-      throw std::runtime_error("Failed to receive message");
+      throw std::system_error(errno, std::generic_category(),
+                              "Failed to receive message");
     }
 
     return std::string(buffer.data(), bytesReceived);
@@ -199,8 +201,8 @@ class UnixSocketImpl {
     socklen_t addrLen = sizeof(addrStorage);
     int clientSocket = ::accept(_socket, (sockaddr*)&addrStorage, &addrLen);
     if (clientSocket < 0) {
-      std::cerr << "Accept error: " << strerror(errno) << std::endl;
-      throw std::runtime_error("Failed to accept connection");
+      throw std::system_error(errno, std::generic_category(),
+                              "Failed to accept connection");
     }
     ClientInfo clientInfo;
     char clientIpStr[INET6_ADDRSTRLEN];
@@ -239,8 +241,8 @@ class UnixSocketImpl {
     if (_socket >= 0) {
       shutdown(_socket, SHUT_RDWR);
       _socket = -1;
+      std::cout << "Socket closed." << std::endl;
     }
-    std::cout << "Socket closed." << std::endl;
   }
 
   bool init() {

@@ -33,6 +33,8 @@ class Task {
     }
   }
 
+  bool isDone() { return _handle.done() || !_handle; }
+
   // constructor
   Task(std::coroutine_handle<promise_type> h) : _handle(h) {}
   ~Task() { _handle.destroy(); }
@@ -62,12 +64,18 @@ class Task<void> {
     void return_void() {}  // Handle return value
   };
 
+  bool isDone() { return _handle.done() || !_handle; }
+
   // constructor
   Task(std::coroutine_handle<promise_type> h) : _handle(h) {}
   ~Task() {
     if (_handle) {
       _handle.destroy();
     }
+  }
+
+  Task(Task&& other) noexcept : _handle(std::move(other._handle)) {
+    other._handle = nullptr;
   }
 
  private:
