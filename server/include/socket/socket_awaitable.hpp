@@ -86,20 +86,12 @@ template <>
 class SocketAwaitable<void> {
   struct SharedState {
     std::exception_ptr _exceptionPtr = nullptr;
+    std::coroutine_handle<> handle = nullptr;
   };
 
  public:
-  template <typename Class, typename... Args>
-  SocketAwaitable(void (Class::*funcPtr)(Args...), Class* instance,
-                  Args&&... args)
-      : _func([funcPtr, instance,
-               argsTuple = std::make_tuple(std::forward<Args>(args)...)]() {
-          return std::apply(
-              [&](auto&&... tupleArgs) {
-                return std::invoke(funcPtr, instance, tupleArgs...);
-              },
-              std::move(argsTuple));
-        }) {}
+  SocketAwaitable(std::function<void()>&& func)
+      : _func(std::move(func)), _sharedState(std::make_shared<SharedState>()) {}
 
   bool await_ready() {
     // Check if the socket is ready for I/O operations
@@ -114,17 +106,30 @@ class SocketAwaitable<void> {
       throw std::runtime_error("Function not set");
     }
 
-    (void)thread_pool.enqueue([&handle, this]() {
+    _sharedState->handle = handle;
+    auto state = _sharedState;
+    auto func = std::move(_func);
+
+    (void)thread_pool.enqueue([state, func]() {
       while (true) {
         try {
           // Call the function and resume the coroutine
-          _func();
-        } catch (const std::exception& e) {
+          func();
+          break;
+        } catch (const std::system_error& e) {
           // Handle exception
-          _sharedState->_exceptionPtr = std::current_exception();
+          if (e.code() != std::errc::operation_would_block &&
+              e.code() != std::errc::resource_unavailable_try_again) {
+            state->_exceptionPtr = std::current_exception();
+          }
+        } catch (const std::exception& e) {
+          // Handle other exceptions
+          state->_exceptionPtr = std::current_exception();
         }
       }
-      handle.resume();
+      if (!state->handle.done()) {
+        state->handle.resume();
+      }
     });
   }
 

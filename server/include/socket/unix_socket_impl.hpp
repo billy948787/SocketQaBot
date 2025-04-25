@@ -246,22 +246,22 @@ class UnixSocketImpl {
   }
 
   bool init() {
-    const int flags = fcntl(_socket, F_GETFL, 0);
-    if (flags == -1) {
-      std::cerr << "Failed to get socket flags: " << strerror(errno)
-                << std::endl;
-      return false;
-    }
+    // const int flags = fcntl(_socket, F_GETFL, 0);
+    // if (flags == -1) {
+    //   std::cerr << "Failed to get socket flags: " << strerror(errno)
+    //             << std::endl;
+    //   return false;
+    // }
 
-    if (flags & O_NONBLOCK) {
-      return true;
-    }
+    // if (flags & O_NONBLOCK) {
+    //   return true;
+    // }
 
-    if (fcntl(_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
-      std::cerr << "Failed to set socket to non-blocking: " << strerror(errno)
-                << std::endl;
-      return false;
-    }
+    // if (fcntl(_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+    //   std::cerr << "Failed to set socket to non-blocking: " << strerror(errno)
+    //             << std::endl;
+    //   return false;
+    // }
 
     // std::cout << "Socket set to non-blocking mode." << std::endl;
     return true;

@@ -8,7 +8,7 @@ namespace qabot::task {
 template <typename T>
 class Task {
  public:
-  class promise_type;
+
   class promise_type {
    public:
     Task get_return_object() {
@@ -48,7 +48,6 @@ class Task {
 template <>
 class Task<void> {
  public:
-  class promise_type;
   class promise_type {
    public:
     Task get_return_object() {

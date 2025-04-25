@@ -4,12 +4,12 @@
 #include <sstream>
 #include <string>
 
-#include "http_types.hpp"
+#include "http.hpp"
 
 namespace qabot::http {
 class HttpParser {
  public:
-  HttpRequest parseRequest(const std::string& rawHttp) {
+  static HttpRequest parseRequest(const std::string& rawHttp) {
     std::stringstream requestStream(rawHttp);
     std::string line;
     std::cout << "start parsing\n";
@@ -17,6 +17,7 @@ class HttpParser {
     // get first line of header
     std::getline(requestStream, line);
     std::stringstream lineStream(line);
+    std::unordered_map<std::string, std::string> headers;
     std::string method, path, version;
     lineStream >> method >> path >> version;
 
@@ -47,6 +48,18 @@ class HttpParser {
 
       lineStream >> key >> value;
 
+      // remove ":" from key
+      if (key.back() == ':') {
+        key.pop_back();
+      }
+      // remove "\r" from value
+      if (value.back() == '\r') {
+        value.pop_back();
+      }
+
+      // store header
+      headers[key] = value;
+
       if (key == "Content-Type:") {
         if (value != "application/json") {
           throw std::runtime_error("Unsupported Content Type");
@@ -67,10 +80,10 @@ class HttpParser {
       throw std::runtime_error("Empty body content");
     }
 
-    return HttpRequest{.method = requestMethod, .path = path, .body = body};
+    return HttpRequest{requestMethod, path, headers, body};
   }
 
-  HttpResponse parseResponse(const std::string& rawHttp) {
+  static HttpResponse parseResponse(const std::string& rawHttp) {
     std::stringstream responseStream(rawHttp);
     std::string line;
 
@@ -78,6 +91,7 @@ class HttpParser {
     std::getline(responseStream, line);
 
     std::stringstream lineStream(line);
+    std::unordered_map<std::string, std::string> headers;
     std::string version;
     std::string statusCode;
     std::string statusMessage;
@@ -90,6 +104,22 @@ class HttpParser {
 
     // get each line of header
     while (getline(responseStream, line)) {
+      std::stringstream lineStream(line);
+      std::string key;
+      std::string value;
+      lineStream >> key >> value;
+      // remove ":" from key
+      if (key.back() == ':') {
+        key.pop_back();
+      }
+
+      // remove "\r" from value
+      if (value.back() == '\r') {
+        value.pop_back();
+      }
+
+      // store header
+      headers[key] = value;
       if (line == "\r") {
         break;  // End of headers
       }
@@ -98,9 +128,8 @@ class HttpParser {
     // get body content
     std::string body = responseStream.str().substr(responseStream.tellg());
 
-    return HttpResponse{.statusCode = std::stoi(statusCode),
-                        .statusMessage = statusMessage,
-                        .body = body};
+    return HttpResponse{std::stoi(statusCode), headers,
+                        body};  // Convert statusCode to int
   }
 };
 }  // namespace qabot::http

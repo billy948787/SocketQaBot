@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include "http/http_parser.hpp"
+#include "http/http_serialize.hpp"
 #include "scope_manager/scope_manager.hpp"
 #include "socket/socket.hpp"
 #include "socket/socket_awaitable.hpp"
@@ -19,7 +20,8 @@ using SocketImpl = qabot::socket::UnixSocketImpl;
 qabot::task::Task<void> handleClient(
     qabot::socket::Socket<SocketImpl>&& clientSocket) {
   // 使用 std::shared_ptr 確保 clientSocket 在協程執行期間有效
-  auto clientSocketPtr = std::make_shared<qabot::socket::Socket<SocketImpl>>(std::move(clientSocket));
+  auto clientSocketPtr = std::make_shared<qabot::socket::Socket<SocketImpl>>(
+      std::move(clientSocket));
   // 或者確保 Task 能正確處理傳入物件的生命週期
   try {
     while (true) {  // 循環接收來自此客戶端的訊息
@@ -29,12 +31,19 @@ qabot::task::Task<void> handleClient(
           });
 
       if (message.empty()) {
-        // 對方可能關閉了連線
+        // Client disconnected
         std::cout << "Client disconnected." << std::endl;
         break;
       }
 
-      std::cout << "Received: " << message << "\n";
+      std::string response = qabot::http::serializeResponse(
+          qabot::http::ResponseStatus::OK,
+          {{"Content-Type",
+            qabot::http::contentTypeToString(qabot::http::ContentType::JSON)}},
+          nlohmann::json({{"你才是", "白癡"}}).dump());
+
+      co_await qabot::socket::SocketAwaitable<void>(
+          [clientSocketPtr, response]() { clientSocketPtr->send(response); });
     }
   } catch (const std::exception& e) {
     std::cerr << "Error handling client: " << e.what() << std::endl;
@@ -72,24 +81,15 @@ int main() {
   socket.bind("localhost", 38763);
 
   socket.listen(5);
-
-  qabot::http::HttpParser httpParser;
   // Start the server accept loop
   try {
     auto serverTask = serverAcceptLoop(socket);
 
-    auto start = std::chrono::steady_clock::now();
-
     while (true) {
-      auto now = std::chrono::steady_clock::now();
-      auto elapsed =
-          std::chrono::duration_cast<std::chrono::seconds>(now - start);
+      std::this_thread::sleep_for(std::chrono::seconds(5));
 
-      if (elapsed.count() >= 5) {
-        qabot::scope_manager::ScopeManager::getInstance().cleanUpTask();
-
-        start = now;
-      }
+      // Clean up completed tasks
+      qabot::scope_manager::ScopeManager::getInstance().cleanUpTask();
     }
   } catch (const std::exception& e) {
     std::cerr << "Error in server accept loop: " << e.what() << std::endl;
