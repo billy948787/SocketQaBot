@@ -92,35 +92,31 @@ inline std::string responseStatusToString(ResponseStatus status) {
       return "";
   }
 }
-class Http {
- public:
-  Http(std::unordered_map<std::string, std::string> headers, std::string body)
-      : _headers(std::move(headers)), _body(std::move(body)) {}
+struct Http {
+  Http(const std::unordered_map<std::string, std::string>& headers)
+      : headers(std::move(headers)) {}
 
-  std::unordered_map<std::string, std::string> _headers;
-  std::string _body;
+  std::unordered_map<std::string, std::string> headers;
 };
 
-class HttpRequest : public Http {
- public:
+struct HttpRequest : public Http {
   HttpRequest(RequestMethod method, const std::string& path,
               const std::unordered_map<std::string, std::string>& headers,
               const std::string& body)
-      : _method(method),
-        _path(path),
-        Http(std::move(headers), std::move(body)) {}
+      : method(method), path(path), body(body), Http(std::move(headers)) {}
 
-  RequestMethod _method;
-  std::string _path;
+  RequestMethod method;
+  std::string path;
+  std::string body;
 };
 
-class HttpResponse : public Http {
- public:
+struct HttpResponse : public Http {
   HttpResponse(int statusCode,
                const std::unordered_map<std::string, std::string>& headers,
                const std::string& body)
-      : _statusCode(statusCode), Http(std::move(headers), std::move(body)) {}
+      : statusCode(statusCode), body(body), Http(std::move(headers)) {}
 
-  int _statusCode;
+  int statusCode;
+  std::string body;
 };
 }  // namespace qabot::http

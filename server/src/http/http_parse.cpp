@@ -4,7 +4,6 @@ namespace qabot::http {
 HttpRequest parseRequest(const std::string& rawHttp) {
   std::stringstream requestStream(rawHttp);
   std::string line;
-  std::cout << "start parsing\n";
 
   // get first line of header
   std::getline(requestStream, line);
