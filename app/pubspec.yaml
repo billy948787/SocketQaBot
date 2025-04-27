@@ -1,14 +1,17 @@
 name: qabot
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 version: 0.1.0
 
 environment:
   sdk: ^3.5.4
 
 dependencies:
+  equatable: ^2.0.7
   flutter:
     sdk: flutter
+  flutter_bloc: ^9.1.0
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:

@@ -23,22 +23,25 @@ using SocketImpl = qabot::socket::UnixSocketImpl;
 
 qabot::task::Task<void> handleClient(
     qabot::socket::Socket<SocketImpl>&& clientSocket) {
-  // 使用 std::shared_ptr 確保 clientSocket 在協程執行期間有效
+  // Create a shared pointer to the client socket
+  // This allows us to share the socket between the coroutine and the main
+  // thread
   auto clientSocketPtr = std::make_shared<qabot::socket::Socket<SocketImpl>>(
       std::move(clientSocket));
 
-  // 使用 std::shared_ptr 確保 sendingSocket 在協程執行期間有效
+  // Create a secure socket for sending data to the AI server
   auto sendingSocketPtr =
       std::make_shared<qabot::socket::SecureSocket<SocketImpl>>(
           qabot::socket::TransportProtocol::TCP,
           qabot::socket::IPVersion::IPv4);
   try {
-    // 1. Connect to the AI server
+    // connect to the AI server
     co_await qabot::awaitable::Awaitable<void>([sendingSocketPtr]() {
       sendingSocketPtr->connect(AI_SERVER_URL, HTTPS_PORT);
     });
-    // 或者確保 Task 能正確處理傳入物件的生命週期
-    while (true) {  // 循環接收來自此客戶端的訊息
+
+    // Keep receiving messages from the client
+    while (true) {
       auto clientMessage = co_await qabot::awaitable::Awaitable<std::string>(
           [clientSocketPtr]() -> std::string {
             return clientSocketPtr->receive(1024 * 8);
@@ -93,29 +96,13 @@ qabot::task::Task<void> handleClient(
         while (true) {
           std::string headerLine;
           while (true) {
-            auto receive_byte_awaitable =
-                qabot::awaitable::Awaitable<std::string>(
-                    [sendingSocketPtr]() -> std::string {
-                      // Optional: Add logging inside the lambda if needed for
-                      // further debugging std::cerr << "[" <<
-                      // std::this_thread::get_id() << "] receive(1) lambda:
-                      // Calling receive(1)..." << std::endl;
-                      std::string result = sendingSocketPtr->receive(1);
-                      // std::cerr << "[" << std::this_thread::get_id() << "]
-                      // receive(1) lambda: receive(1) returned '" <<
-                      // (result.empty() ? "EMPTY" : result) << "'" <<
-                      // std::endl;
-                      return result;
-                    });
+            auto nowChar = co_await qabot::awaitable::Awaitable<char>(
+                [sendingSocketPtr]() -> char {
+                  char result = sendingSocketPtr->receive(1)[0];
 
-            // Await the named variable
-            auto receivedData = co_await receive_byte_awaitable;
+                  return result;
+                });
 
-            if (receivedData.empty()) {
-              std::cerr << "Received empty data, connection may be closed."
-                        << std::endl;
-            }
-            char nowChar = receivedData[0];
             if (nowChar == '\n') {
               break;
             } else if (nowChar == '\r') {
@@ -149,24 +136,26 @@ qabot::task::Task<void> handleClient(
         // 3. Read the response body
         std::string responseBody;
         if (isChunked) {
-          // read the chunk size
-          // first read one line
+          // If the response is chunked, we need to send initial headers
+          // to the client
           std::stringstream initialHeadersSs;
           initialHeadersSs << "HTTP/1.1 200 OK\r\n";
           initialHeadersSs << "Content-Type: "
                            << contentTypeToString(
                                   qabot::http::ContentType::JSON)
-                           << "\r\n";  // 或者 application/json; charset=utf-8
+                           << "\r\n";
           initialHeadersSs << "Transfer-Encoding: chunked\r\n";
-          initialHeadersSs << "Connection: keep-alive\r\n";  // 假設保持連線
-          // 可以添加其他必要的標頭
-          initialHeadersSs << "\r\n";  // 標頭結束的空行
+          initialHeadersSs << "Connection: keep-alive\r\n";
+
+          initialHeadersSs << "\r\n";
           std::string initialResponseHeaders = initialHeadersSs.str();
 
           co_await qabot::awaitable::Awaitable<void>(
               [clientSocketPtr, initialResponseHeaders]() {
                 clientSocketPtr->send(initialResponseHeaders);
               });
+          // read the chunk size
+          // first read one line
           while (true) {
             // read the chunk size
             std::string chunkSizeLine;
@@ -274,14 +263,19 @@ int main() {
   qabot::socket::Socket<SocketImpl> listeningSocket(
       qabot::socket::TransportProtocol::TCP, qabot::socket::IPVersion::IPv4);
 
-  listeningSocket.bind("localhost", 38763);
+  listeningSocket.bind("0.0.0.0", 38763);
 
   listeningSocket.listen(5);
   // Start the server accept loop
 
   try {
     auto serverTask = serverAcceptLoop(listeningSocket);
-    while (true);
+    while (true) {
+      // Keep the main thread alive to allow coroutines to run
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+
+      qabot::scope_manager::ScopeManager::getInstance().cleanUpTask();
+    };
   } catch (const std::exception& e) {
     std::cerr << "Error in server accept loop: " << e.what() << std::endl;
   }
