@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io'; // Import dart:io for Socket
 import 'package:flutter/foundation.dart'; // For kDebugMode
+import 'dart:developer' as dev;
 
 class ChatService {
   // TODO: Replace with your actual middleware server IP/hostname and port
-  final String _serverHost = '192.168.50.106'; // Example: '192.168.1.100' or 'your-server.com'
+  final String _serverHost = '10.201.14.97'; // Example: '192.168.1.100' or 'your-server.com'
   final int _serverPort = 38763; // Example: 8080
 
   Socket? _socket;
@@ -17,10 +18,7 @@ class ChatService {
   // Helper method to handle disconnection cleanup
   void _handleDisconnect() {
     if (kDebugMode) {
-      print('Handling disconnection.');
-    }
-    if (kDebugMode) {
-      print('Handling disconnection.');
+      dev.log('Handling disconnection.');
     }
     _socket?.destroy();
     _socket = null;
@@ -35,7 +33,7 @@ class ChatService {
   void closeConnection() {
     if (_socket != null) {
       if (kDebugMode) {
-        print('Closing socket connection.');
+        dev.log('Closing socket connection.');
       }
       _handleDisconnect(); // Use helper to ensure proper cleanup
     } else {
@@ -48,7 +46,7 @@ class ChatService {
   }
 
   // Method to establish connection and return the stream for responses
-  Stream<String> connectAndListen() {
+  Stream<String> connectAndListen({required String host, required int port}) {
     // Close existing connection if any
     closeConnection();
 
@@ -58,14 +56,14 @@ class ChatService {
     _headersSkipped = false; // Reset flag on new connection attempt
 
     if (kDebugMode) {
-      print('Attempting to connect to $_serverHost:$_serverPort...');
+      dev.log('Attempting to connect to $host:$port...');
     }
 
-    Socket.connect(_serverHost, _serverPort,
+    Socket.connect(host, port,
             timeout: const Duration(seconds: 10))
         .then((socket) {
       if (kDebugMode) {
-        print(
+        dev.log(
             'Connected to: ${socket.remoteAddress.address}:${socket.remotePort}');
       }
       _socket = socket;
@@ -74,7 +72,7 @@ class ChatService {
         (List<int> data) {
           final receivedString = utf8.decode(data);
           if (kDebugMode) {
-            print('Received raw data chunk (visible whitespace): ${receivedString.replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}');
+            dev.log('Received raw data chunk (visible whitespace): ${receivedString.replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}');
           }
           _buffer += receivedString;
 
@@ -87,7 +85,7 @@ class ChatService {
               _buffer = _buffer.substring(headerEndIndex + 4); // Skip headers + \r\n\r\n
               _headersSkipped = true;
               if (kDebugMode) {
-                print('Skipped HTTP headers. Remaining buffer start: "${_buffer.substring(0, (_buffer.length > 100 ? 100 : _buffer.length)).replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}..."');
+                dev.log('Skipped HTTP headers. Remaining buffer start: "${_buffer.substring(0, (_buffer.length > 100 ? 100 : _buffer.length)).replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}..."');
               }
             } else {
               // Headers not fully received yet, wait for more data
@@ -111,13 +109,13 @@ class ChatService {
             line = line.trim(); // Trim whitespace (\n, \r, spaces)
 
             if (kDebugMode) {
-              // print('Processing line from buffer: "${line.replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}"');
+              // dev.log('Processing line from buffer: "${line.replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}"');
             }
 
             // Ignore empty lines and chunk size lines (heuristic)
             if (line.isEmpty || RegExp(r'^[0-9a-fA-F]+$').hasMatch(line)) {
               if (kDebugMode && line.isNotEmpty) {
-                 print('Ignoring chunk size line: "$line"');
+                 dev.log('Ignoring chunk size line: "$line"');
               }
               continue;
             }
@@ -126,7 +124,7 @@ class ChatService {
             if (line.startsWith('data:')) {
               String jsonDataPart = line.substring('data:'.length).trim();
               if (kDebugMode) {
-                print('Found data line content: "$jsonDataPart"');
+                dev.log('Found data line content: "$jsonDataPart"');
               }
 
               // Append to partial JSON buffer
@@ -137,7 +135,7 @@ class ChatService {
                 var jsonData = jsonDecode(_currentPartialJson);
                 // If parsing succeeds, we have a complete JSON object
                 if (kDebugMode) {
-                  print('Successfully parsed JSON: $_currentPartialJson');
+                  dev.log('Successfully parsed JSON: $_currentPartialJson');
                 }
 
                 // Extract text from Gemini structure
@@ -151,7 +149,7 @@ class ChatService {
                         var text = parts[0]['text'] as String?;
                         if (text != null && text.isNotEmpty) {
                           if (kDebugMode) {
-                            print('Extracted text: "$text"');
+                            dev.log('Extracted text: "$text"');
                           }
                           // Add extracted text to the stream
                           _messageStreamController?.add(text);
@@ -166,23 +164,23 @@ class ChatService {
               } catch (e) {
                 // If JSON parsing fails, it might be incomplete. Keep accumulating.
                 if (kDebugMode) {
-                  // Only print error if it's not an Unterminated string or similar incomplete errors
+                  // Only dev.log error if it's not an Unterminated string or similar incomplete errors
                   if (!e.toString().contains('Unterminated string') && !e.toString().contains('Unexpected character') && !e.toString().contains('Expected') ) {
-                     print('JSON parse error (likely incomplete): $e - Current partial JSON: "$_currentPartialJson"');
+                     dev.log('JSON parse error (likely incomplete): $e - Current partial JSON: "$_currentPartialJson"');
                   } else {
-                     print('JSON likely incomplete, continuing accumulation...');
+                     dev.log('JSON likely incomplete, continuing accumulation...');
                   }
                 }
               }
             } else {
                if (kDebugMode) {
-                 print('Ignoring non-data line: "$line"');
+                 dev.log('Ignoring non-data line: "$line"');
                }
                // If we encounter a non-data line after starting to accumulate JSON,
                // it might indicate an error or unexpected format. Reset partial buffer.
                if (_currentPartialJson.isNotEmpty) {
                   if (kDebugMode) {
-                     print('Resetting partial JSON buffer due to non-data line.');
+                     dev.log('Resetting partial JSON buffer due to non-data line.');
                   }
                  _currentPartialJson = '';
                }
@@ -192,14 +190,14 @@ class ChatService {
         },
         onError: (error) {
           if (kDebugMode) {
-            print('Socket error: $error');
+            dev.log('Socket error: $error');
           }
           _messageStreamController?.addError('Socket error: $error');
           _handleDisconnect();
         },
         onDone: () {
           if (kDebugMode) {
-            print('Socket connection closed by server.');
+            dev.log('Socket connection closed by server.');
           }
           _handleDisconnect();
         },
@@ -210,7 +208,7 @@ class ChatService {
       // This catchError is for errors during the Socket.connect future
     }).catchError((error) {
       if (kDebugMode) {
-        print('Failed to connect: $error');
+        dev.log('Failed to connect: $error');
       }
       _messageStreamController?.addError('Connection failed: $error');
       _messageStreamController?.close(); // Close stream if connection fails
@@ -233,7 +231,7 @@ class ChatService {
         _messageStreamController == null ||
         _messageStreamController!.isClosed) {
       if (kDebugMode) {
-        print('Socket not connected or stream closed. Cannot send message.');
+        dev.log('Socket not connected or stream closed. Cannot send message.');
       }
       throw Exception('Socket is not connected. Call connectAndListen first.');
     }
@@ -261,7 +259,7 @@ class ChatService {
     final payload = '$header$contentLength$endOfHeaders$bodyJson';
 
     if (kDebugMode) {
-      print('Sending message via Socket: $payload');
+      dev.log('Sending message via Socket: $payload');
     }
     // Add a newline delimiter, assuming the server expects it. Adjust if needed.
     _socket!.write('$payload\n');

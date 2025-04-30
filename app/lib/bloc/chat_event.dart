@@ -30,7 +30,13 @@ class ReceiveMessageEvent extends ChatEvent {
 
 // Event to initialize connection
 class ConnectWebSocketEvent extends ChatEvent {
-  const ConnectWebSocketEvent();
+  final String host;
+  final int port;
+
+  const ConnectWebSocketEvent({required this.host, required this.port});
+
+  @override
+  List<Object> get props => [host, port];
 }
 
 // Event when connection is established (internal)

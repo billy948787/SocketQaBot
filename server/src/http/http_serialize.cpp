@@ -28,7 +28,7 @@ std::string serializeResponse(
   std::stringstream responseStream;
   std::string statusStr = responseStatusToString(statusCode);
 
-  responseStream << "HTTP/1.1 " << statusStr << "\r\n";
+  responseStream << "HTTP/2 " << statusStr << "\r\n";
   for (const auto& [key, value] : headers) {
     responseStream << key << ": " << value << "\r\n";
   }

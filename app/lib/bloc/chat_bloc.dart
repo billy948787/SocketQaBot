@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:qabot/services/chat_service.dart'; // Import ChatService
 import 'package:flutter/foundation.dart'; // Import for kDebugMode
+import 'dart:developer' as dev;
 
 part 'chat_event.dart';
 part 'chat_state.dart';
@@ -35,7 +36,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     emit(ChatLoading(
         state.messages, 'Connecting...')); // Indicate connection attempt
     try {
-      final messageStream = _chatService.connectAndListen();
+      final messageStream = _chatService.connectAndListen(host: event.host, port: event.port);
       _messageSubscription?.cancel(); // Cancel previous subscription if any
       _messageSubscription = messageStream.listen(
         (message) {
@@ -123,7 +124,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     // Add debug print to check the received chunk
     if (kDebugMode) {
-      print('Received message chunk in Bloc: $newMessageChunk');
+      dev.log('Received message chunk in Bloc: $newMessageChunk');
     }
 
     // Check if the last message is an AI message to append to
@@ -139,8 +140,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     // Add debug print to check the updated messages list
     if (kDebugMode) {
-      print('Updated messages list length: ${currentMessages.length}');
-      print('Updated messages: $currentMessages');
+      dev.log('Updated messages list length: ${currentMessages.length}');
+      dev.log('Updated messages: $currentMessages');
     }
 
     // Emit the updated state, staying in ChatConnected
