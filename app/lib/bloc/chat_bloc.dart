@@ -23,18 +23,31 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<WebSocketConnectedEvent>(_onWebSocketConnected);
     on<WebSocketConnectionFailedEvent>(_onWebSocketConnectionFailed);
     on<WebSocketDisconnectedEvent>(_onWebSocketDisconnected);
+    on<SettingsLoadedEvent>(_onSettingsLoaded); // Add handler for SettingsLoadedEvent
 
     // Optionally, connect immediately when the BLoC is created
     // add(const ConnectWebSocketEvent());
   }
+
+  // New event handler for SettingsLoadedEvent
+  void _onSettingsLoaded(SettingsLoadedEvent event, Emitter<ChatState> emit) {
+    // Update the state with the loaded settings, keeping existing messages
+    emit(ChatInitial(state.statusMessage, event.apiKey)); // Update initial state with API key
+    // If settings exist and we are in the initial state, try connecting
+    if (event.apiKey.isNotEmpty && event.serverIp.isNotEmpty && event.serverPort != 0 && state is ChatInitial) {
+       add(ConnectWebSocketEvent(host: event.serverIp, port: event.serverPort));
+    }
+  }
+
 
   void _onConnectWebSocket(
       ConnectWebSocketEvent event, Emitter<ChatState> emit) {
     if (state is ChatLoading || state is ChatConnected)
       return; // Avoid reconnecting if already connected/connecting
 
+    // Pass apiKey to the new state
     emit(ChatLoading(
-        state.messages, 'Connecting...')); // Indicate connection attempt
+        state.messages, state.apiKey, 'Connecting...')); // Indicate connection attempt
     try {
       final messageStream = _chatService.connectAndListen(host: event.host, port: event.port);
       _messageSubscription?.cancel(); // Cancel previous subscription if any
@@ -60,14 +73,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   void _onWebSocketConnected(
       WebSocketConnectedEvent event, Emitter<ChatState> emit) {
-    emit(ChatConnected(state.messages)); // Move to Connected state
+    // Pass apiKey to the new state
+    emit(ChatConnected(state.messages, state.apiKey)); // Move to Connected state
   }
 
   void _onWebSocketConnectionFailed(
       WebSocketConnectionFailedEvent event, Emitter<ChatState> emit) {
     _messageSubscription?.cancel();
     _messageSubscription = null;
-    emit(ChatError(state.messages, 'Connection Failed: ${event.error}'));
+    // Pass apiKey to the new state
+    emit(ChatError(state.messages, state.apiKey, 'Connection Failed: ${event.error}'));
   }
 
   void _onWebSocketDisconnected(
@@ -76,15 +91,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _messageSubscription = null;
     // Decide if you want to go back to Initial or stay in an Error/Disconnected state
     // Corrected: Pass the status message correctly to ChatInitial
+    // Pass apiKey to the new state
     emit(
-        const ChatInitial('Disconnected.')); // Or a specific Disconnected state
+        ChatInitial('Disconnected.', state.apiKey)); // Or a specific Disconnected state
   }
 
   Future<void> _onSendMessage(
       SendMessageEvent event, Emitter<ChatState> emit) async {
     // Ensure we are connected before sending
     if (state is! ChatConnected) {
-      emit(ChatError(state.messages, 'Not connected to the server.'));
+      // Pass apiKey to the new state
+      emit(ChatError(state.messages, state.apiKey, 'Not connected to the server.'));
       // Optionally try to reconnect here: add(const ConnectWebSocketEvent());
       return;
     }
@@ -93,14 +110,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final userMessage = 'You: ${event.message}';
     final updatedMessages = List<String>.from(state.messages)..add(userMessage);
     // Keep the state as ChatConnected while waiting for response, but indicate thinking
+    // Pass apiKey to the new state
     emit(ChatLoading(
-        updatedMessages, 'AI is thinking...')); // Show thinking state
+        updatedMessages, state.apiKey, 'AI is thinking...')); // Show thinking state
 
     try {
-      // Use the ChatService to send the message
-      _chatService.sendMessage(
-        apiKey: event.apiKey, // Use the apiKey from the event
+      // Use the ChatService to send the message, passing the API key from the state
+      await _chatService.sendMessage( // Add await
         message: event.message,
+        apiKey: state.apiKey, // Pass API key from state
         // prompt: 'Your desired prompt', // Optional: customize prompt
         // modelName: 'your-model-name' // Optional: customize model
       );
@@ -111,7 +129,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       final errorMessages = List<String>.from(
           updatedMessages) // Use updatedMessages which includes the user's message
         ..add('Error sending message: ${e.toString()}');
-      emit(ChatError(errorMessages, 'Failed to send message: ${e.toString()}'));
+      // Pass apiKey to the new state
+      emit(ChatError(errorMessages, state.apiKey, 'Failed to send message: ${e.toString()}'));
       // Handle potential disconnection due to error
       _chatService.closeConnection();
       add(const WebSocketDisconnectedEvent());
@@ -145,7 +164,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
 
     // Emit the updated state, staying in ChatConnected
-    emit(ChatConnected(currentMessages));
+    // Pass apiKey to the new state
+    emit(ChatConnected(currentMessages, state.apiKey));
   }
 
   @override

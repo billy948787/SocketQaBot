@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io'; // Import dart:io for Socket
 import 'package:flutter/foundation.dart'; // For kDebugMode
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Import flutter_secure_storage
 import 'dart:developer' as dev;
 
 class ChatService {
@@ -220,13 +221,16 @@ class ChatService {
     return _messageStreamController!.stream;
   }
 
+  // Create storage
+  final _storage = const FlutterSecureStorage();
+
   // Method to send a message over the established connection
-  void sendMessage({
-    required String apiKey,
+  Future<void> sendMessage({ // Change return type to Future<void>
     required String message,
+    required String apiKey, // Accept API key as parameter
     String prompt = '使用繁體中文回答',
     String modelName = 'gemini-2.0-flash',
-  }) {
+  }) async { // Add async keyword
     if (_socket == null ||
         _messageStreamController == null ||
         _messageStreamController!.isClosed) {
@@ -253,7 +257,7 @@ class ChatService {
       'prompt': prompt,
       'model_name': modelName,
       'message': message,
-      'api_key': apiKey,
+      'api_key': apiKey, // Use the passed API key
     });
 
     final payload = '$header$contentLength$endOfHeaders$bodyJson';

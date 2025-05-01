@@ -56,3 +56,19 @@ class WebSocketConnectionFailedEvent extends ChatEvent {
 class WebSocketDisconnectedEvent extends ChatEvent {
   const WebSocketDisconnectedEvent();
 }
+
+// Event when settings are loaded from storage
+class SettingsLoadedEvent extends ChatEvent {
+  final String apiKey;
+  final String serverIp;
+  final int serverPort;
+
+  const SettingsLoadedEvent({
+    required this.apiKey,
+    required this.serverIp,
+    required this.serverPort,
+  });
+
+  @override
+  List<Object> get props => [apiKey, serverIp, serverPort];
+}

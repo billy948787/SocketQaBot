@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart'; // Import Bloc
 import 'package:qabot/bloc/chat_bloc.dart'; // Import ChatBloc, State, Event
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Import flutter_secure_storage
+import 'package:flutter_markdown/flutter_markdown.dart'; // Import flutter_markdown
 
 class ChatView extends StatefulWidget {
   const ChatView({super.key});
@@ -15,6 +17,8 @@ class _ChatViewState extends State<ChatView> {
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _serverIpController = TextEditingController();
   final TextEditingController _serverPortController = TextEditingController();
+
+  final _storage = const FlutterSecureStorage(); // Initialize FlutterSecureStorage
 
   String _apiKey = '';
   String _serverIp = '';
@@ -30,32 +34,37 @@ class _ChatViewState extends State<ChatView> {
   }
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _apiKey = prefs.getString('api_key') ?? '';
-      _serverIp = prefs.getString('server_ip') ?? '';
-      _serverPort = prefs.getInt('server_port') ?? 0;
+    // Load settings from secure storage
+    _apiKey = await _storage.read(key: 'api_key') ?? '';
+    _serverIp = await _storage.read(key: 'server_ip') ?? '';
+    final serverPortString = await _storage.read(key: 'server_port');
+    _serverPort = int.tryParse(serverPortString ?? '') ?? 0;
 
+    setState(() {
       _apiKeyController.text = _apiKey;
       _serverIpController.text = _serverIp;
       _serverPortController.text = _serverPort == 0 ? '' : _serverPort.toString();
     });
 
-    // If settings exist, maybe trigger connection if not already connected
-    if (_apiKey.isNotEmpty && _serverIp.isNotEmpty && _serverPort != 0 && context.read<ChatBloc>().state is ChatInitial) {
-      _connect();
-    }
+    // Dispatch SettingsLoadedEvent after loading settings
+    context.read<ChatBloc>().add(SettingsLoadedEvent(
+      apiKey: _apiKey,
+      serverIp: _serverIp,
+      serverPort: _serverPort,
+    ));
+
+    // The connection logic is now handled within the ChatBloc's SettingsLoadedEvent handler
   }
 
   Future<void> _saveSettings() async {
-    final prefs = await SharedPreferences.getInstance();
     final newApiKey = _apiKeyController.text;
     final newServerIp = _serverIpController.text;
     final newServerPort = int.tryParse(_serverPortController.text) ?? 0;
 
-    await prefs.setString('api_key', newApiKey);
-    await prefs.setString('server_ip', newServerIp);
-    await prefs.setInt('server_port', newServerPort);
+    // Save settings to secure storage
+    await _storage.write(key: 'api_key', value: newApiKey);
+    await _storage.write(key: 'server_ip', value: newServerIp);
+    await _storage.write(key: 'server_port', value: newServerPort.toString()); // Secure storage stores strings
 
     setState(() {
       _apiKey = newApiKey;
@@ -67,37 +76,47 @@ class _ChatViewState extends State<ChatView> {
       const SnackBar(content: Text('Settings Saved!')),
     );
 
-    // If settings are saved and we are not connected, try connecting
-    if (_apiKey.isNotEmpty && _serverIp.isNotEmpty && _serverPort != 0 &&
-        context.read<ChatBloc>().state is! ChatConnected &&
-        context.read<ChatBloc>().state is! ChatLoading) {
-      _connect();
-    }
+    // Dispatch SettingsLoadedEvent after saving settings
+    context.read<ChatBloc>().add(SettingsLoadedEvent(
+      apiKey: newApiKey,
+      serverIp: newServerIp,
+      serverPort: newServerPort,
+    ));
+
+    // The connection logic is now handled within the ChatBloc's SettingsLoadedEvent handler
   }
 
   void _connect() {
+     // Connection logic is now handled by the Bloc when settings are loaded/saved
+     // We can still keep this function if needed for a dedicated connect button,
+     // but it should dispatch a ConnectWebSocketEvent with the current settings from the state.
+     // For now, we'll rely on the SettingsLoadedEvent to trigger connection.
+     // Connection logic is now handled by the Bloc when settings are loaded/saved
+     // We can still keep this function if needed for a dedicated connect button,
+     // but it should dispatch a ConnectWebSocketEvent with the current settings from the state.
+     // For now, we'll rely on the SettingsLoadedEvent to trigger connection.
+     // Use the local state variables for IP and Port
      if (_serverIp.isNotEmpty && _serverPort != 0 && _apiKey.isNotEmpty) {
-       context.read<ChatBloc>().add(ConnectWebSocketEvent(host: _serverIp, port: _serverPort));
-     } else if (_serverIp.isEmpty || _serverPort == 0) {
-       ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Please enter and save Server IP and Port.')),
-       );
-     } else if (_apiKey.isEmpty) {
+        context.read<ChatBloc>().add(ConnectWebSocketEvent(host: _serverIp, port: _serverPort));
+     } else {
         ScaffoldMessenger.of(context).showSnackBar(
-         const SnackBar(content: Text('Please enter and save your API Key.')),
-       );
+          const SnackBar(content: Text('Please enter and save Server IP, Port, and API Key.')),
+        );
      }
   }
 
   void _sendMessage() {
-    if (_messageController.text.isNotEmpty && _apiKey.isNotEmpty) {
-      // Send message via Bloc
+    // Get API key from the Bloc state before sending
+    final currentApiKey = context.read<ChatBloc>().state.apiKey;
+
+    if (_messageController.text.isNotEmpty && currentApiKey.isNotEmpty) {
+      // Send message via Bloc, passing the API key from the state
       context.read<ChatBloc>().add(
-            SendMessageEvent(_messageController.text, _apiKey),
+            SendMessageEvent(_messageController.text, currentApiKey), // Pass API key from state
           );
       _messageController.clear();
       _scrollToBottom(); // Scroll after sending
-    } else if (_apiKey.isEmpty) {
+    } else if (currentApiKey.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Please enter and save your API Key first!')),
@@ -142,6 +161,12 @@ class _ChatViewState extends State<ChatView> {
           },
         ),
         actions: [
+          // Add a settings button
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
+            onPressed: _showSettingsDialog,
+          ),
           // Add a reconnect button
           BlocBuilder<ChatBloc, ChatState>(
             builder: (context, state) {
@@ -162,59 +187,6 @@ class _ChatViewState extends State<ChatView> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-            child: Column( // Use Column for multiple input fields
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _serverIpController,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter Server IP...',
-                          labelText: 'Server IP',
-                        ),
-                        keyboardType: TextInputType.numberWithOptions(decimal: true), // Allow numbers and dots
-                      ),
-                    ),
-                    SizedBox(width: 8.0), // Add spacing
-                    Expanded(
-                      child: TextField(
-                        controller: _serverPortController,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter Server Port...',
-                          labelText: 'Server Port',
-                        ),
-                        keyboardType: TextInputType.number, // Allow only numbers
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8.0), // Add spacing
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _apiKeyController,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter your API Key...',
-                          labelText: 'API Key',
-                        ),
-                        obscureText: true,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.save),
-                      tooltip: 'Save Settings', // Changed tooltip
-                      onPressed: _saveSettings, // Changed onPressed
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const Divider(),
           // Use BlocBuilder to display messages from the state
           Expanded(
             child: BlocConsumer<ChatBloc, ChatState>(
@@ -293,16 +265,37 @@ class _ChatViewState extends State<ChatView> {
                       return Align(
                         alignment: isUserMessage ? Alignment.centerRight : Alignment.centerLeft,
                         child: Container(
-                          padding: const EdgeInsets.all(10.0),
-                          margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+                          constraints: BoxConstraints(
+                              maxWidth: MediaQuery.of(context).size.width * 0.7), // Limit bubble width
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 10.0, horizontal: 15.0),
+                          margin: const EdgeInsets.symmetric(
+                              vertical: 4.0, horizontal: 8.0),
                           decoration: BoxDecoration(
-                            color: isUserMessage ? Colors.blue[100] : Colors.grey[300],
-                            borderRadius: BorderRadius.circular(15.0),
+                            color: isUserMessage ? Colors.blueAccent : Colors.grey[300],
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(15.0),
+                              topRight: const Radius.circular(15.0),
+                              bottomLeft: isUserMessage
+                                  ? const Radius.circular(15.0)
+                                  : const Radius.circular(0.0),
+                              bottomRight: isUserMessage
+                                  ? const Radius.circular(0.0)
+                                  : const Radius.circular(15.0),
+                            ),
                           ),
-                          child: Text(
-                            displayedMessage,
-                            style: TextStyle(color: isUserMessage ? Colors.black87 : Colors.black87),
-                          ),
+                          child: isUserMessage
+                              ? Text( // User messages remain as Text
+                                  displayedMessage,
+                                  style: TextStyle(
+                                      color: isUserMessage ? Colors.white : Colors.black87),
+                                )
+                              : MarkdownBody( // AI messages use MarkdownBody
+                                  data: displayedMessage,
+                                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                                    p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black87),
+                                  ),
+                                ),
                         ),
                       );
                     }
@@ -355,13 +348,75 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Settings'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                TextField(
+                  controller: _serverIpController,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter Server IP...',
+                    labelText: 'Server IP',
+                  ),
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _serverPortController,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter Server Port...',
+                    labelText: 'Server Port',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _apiKeyController,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter your API Key...',
+                    labelText: 'API Key',
+                  ),
+                  obscureText: true,
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                // Reset controllers if cancelled
+                _apiKeyController.text = _apiKey;
+                _serverIpController.text = _serverIp;
+                _serverPortController.text = _serverPort == 0 ? '' : _serverPort.toString();
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text('Save'),
+              onPressed: () {
+                _saveSettings();
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
     _apiKeyController.dispose();
-    _serverIpController.dispose(); // Dispose new controller
-    _serverPortController.dispose(); // Dispose new controller
-    _scrollController.dispose(); // Dispose scroll controller
+    _serverIpController.dispose();
+    _serverPortController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 }
