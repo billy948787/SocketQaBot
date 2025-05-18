@@ -43,40 +43,37 @@ concept SocketImplConcept = requires(PlatformImpl platformImpl) {
     platformImpl.receiveFrom(std::declval<size_t>())
   } -> std::same_as<std::pair<std::string, ClientInfo>>;
   { platformImpl.close() };
-  { platformImpl.getSocketFD() } -> std::same_as<int>;
+  { platformImpl.getSocketFD() };
 
   { platformImpl.getProtocol() } -> std::same_as<TransportProtocol>;
   { platformImpl.getIPVersion() } -> std::same_as<IPVersion>;
 };
-template <SocketImplConcept PlatformImpl>
-class Socket {
- public:
+template <SocketImplConcept PlatformImpl> class Socket {
+public:
   Socket(TransportProtocol protocol, IPVersion ipVersion)
-      : _protocol(protocol),
-        _ipVersion(ipVersion),
+      : _protocol(protocol), _ipVersion(ipVersion),
         _platformImpl(protocol, ipVersion) {
     _platformImpl.init();
   }
-  Socket(Socket&& other) noexcept
-      : _protocol(other._protocol),
-        _ipVersion(other._ipVersion),
+  Socket(Socket &&other) noexcept
+      : _protocol(other._protocol), _ipVersion(other._ipVersion),
         _platformImpl(std::move(other._platformImpl)) {}
 
-  Socket(PlatformImpl& platformImpl)
+  Socket(PlatformImpl &platformImpl)
       : _protocol(platformImpl.getProtocol()),
         _ipVersion(platformImpl.getIPVersion()),
         _platformImpl(std::move(platformImpl)) {}
   ~Socket() { _platformImpl.close(); }
-  void connect(const std::string& serverName, const int port) {
+  void connect(const std::string &serverName, const int port) {
     _platformImpl.connect(serverName, port);
   }
-  void sendTo(const std::string& serverName, const int port,
-              const std::string& message) {
+  void sendTo(const std::string &serverName, const int port,
+              const std::string &message) {
     _platformImpl.sendTo(serverName, port, message);
   }
-  void send(const std::string& message) { _platformImpl.send(message); }
+  void send(const std::string &message) { _platformImpl.send(message); }
 
-  void bind(const std::string& serverName, const int port) {
+  void bind(const std::string &serverName, const int port) {
     _platformImpl.bind(serverName, port);
   }
   std::string receive(size_t bufferSize) {
@@ -92,9 +89,9 @@ class Socket {
   void listen(int backlog) { _platformImpl.listen(backlog); }
   void close() { _platformImpl.close(); }
 
- private:
+private:
   TransportProtocol _protocol;
   IPVersion _ipVersion;
   PlatformImpl _platformImpl;
 };
-}  // namespace qabot::socket
+} // namespace qabot::socket

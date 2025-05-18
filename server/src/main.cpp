@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "event_manager/event_manager.hpp"
 #include "scope_manager/scope_manager.hpp"
 #include "server/server.hpp"
 

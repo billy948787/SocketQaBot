@@ -34,9 +34,9 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/include
 )
 
-include_directories(
-    ${CMAKE_SOURCE_DIR}/lib/thread-pool/include
-)
+# include_directories(
+#     ${CMAKE_SOURCE_DIR}/lib/thread-pool/include
+# )
         
 if(WIN32)
     target_link_libraries(SocketQaBotServer PRIVATE ws2_32)

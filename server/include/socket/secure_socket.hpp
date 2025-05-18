@@ -3,11 +3,11 @@
 #include <openssl/ssl.h>
 
 #include "socket.hpp"
+#include <vector>
 
 namespace qabot::socket {
-template <SocketImplConcept SocketImpl>
-class SecureSocket {
- public:
+template <SocketImplConcept SocketImpl> class SecureSocket {
+public:
   SecureSocket(TransportProtocol protocol, IPVersion ipVersion)
       : _socket(protocol, ipVersion) {
     // Initialize OpenSSL
@@ -32,7 +32,7 @@ class SecureSocket {
     SSL_CTX_free(_sslContext);
   }
 
-  void connect(const std::string& host, int port) {
+  void connect(const std::string &host, int port) {
     _socket.connect(host, port);
     SSL_set_fd(_ssl, _socket.getSocketFD());
     if (SSL_connect(_ssl) <= 0) {
@@ -40,24 +40,24 @@ class SecureSocket {
     }
   }
 
-  void send(const std::string& data) {
+  void send(const std::string &data) {
     if (SSL_write(_ssl, data.c_str(), data.size()) <= 0) {
       throw std::runtime_error("Failed to send data");
     }
   }
 
   std::string receive(size_t size) {
-    char buffer[size];
-    int bytesReceived = SSL_read(_ssl, buffer, size);
+    std::vector<char> buffer(size);
+    int bytesReceived = SSL_read(_ssl, buffer.data(), size);
     if (bytesReceived <= 0) {
       throw std::runtime_error("Failed to receive data");
     }
-    return std::string(buffer, bytesReceived);
+    return std::string(buffer.data(), bytesReceived);
   }
 
- private:
+private:
   SocketImpl _socket;
-  SSL_CTX* _sslContext;
-  SSL* _ssl;
+  SSL_CTX *_sslContext;
+  SSL *_ssl;
 };
-}  // namespace qabot::socket
+} // namespace qabot::socket

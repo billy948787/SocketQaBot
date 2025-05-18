@@ -1,24 +1,22 @@
 #pragma once
-#include <thread_pool/thread_pool.h>
+#include "event_manager/event_manager.hpp"
 
 #include <coroutine>
 #include <exception>
 #include <functional>
 
 #include "socket/socket.hpp"
-#include "thread_pool_singleton.hpp"
 
 namespace qabot::awaitable {
-template <typename T>
-class Awaitable {
+template <typename T> class Awaitable {
   struct SharedState {
     std::exception_ptr _exceptionPtr = nullptr;
     std::optional<T> _result;
     std::coroutine_handle<> handle = nullptr;
   };
 
- public:
-  Awaitable(std::function<T()>&& func)
+public:
+  Awaitable(std::function<T()> &&func)
       : _func(std::move(func)), _sharedState(std::make_shared<SharedState>()) {}
 
   bool await_ready() {
@@ -39,34 +37,31 @@ class Awaitable {
     auto state = _sharedState;
     auto func = std::move(_func);
 
-    (void)thread_pool.enqueue([state, func]() {
-      while (true) {
-        try {
-          // Call the function and resume the coroutine
-          state->_result.emplace(std::move(func()));
-
-          // Resume the coroutine
-          break;
-        } catch (const std::system_error& e) {
-          // Handle exception
-          if (e.code() != std::errc::operation_would_block &&
-              e.code() != std::errc::resource_unavailable_try_again) {
+    event_manager::EventManager::getInstance().addEvent(
+        [state, func]() mutable {
+          try {
+            // Call the function and resume the coroutine
+            state->_result.emplace(std::move(func()));
+          } catch (const std::system_error &e) {
+            // Handle exception
+            if (e.code() != std::errc::operation_would_block &&
+                e.code() != std::errc::resource_unavailable_try_again) {
+              state->_exceptionPtr = std::current_exception();
+            }
+          } catch (const std::exception &e) {
+            // Handle other exceptions
             state->_exceptionPtr = std::current_exception();
           }
-        } catch (const std::exception& e) {
-          // Handle other exceptions
-          state->_exceptionPtr = std::current_exception();
-        }
-      }
-      if (!state->handle.done()) {
-        state->handle.resume();
-      }
-    });
+
+          if (!state->handle.done()) {
+            state->handle.resume();
+          }
+        });
 
     // Call the function with the provided arguments
   }
 
-  T& await_resume() {
+  T &await_resume() {
     if (_sharedState->_exceptionPtr) {
       std::rethrow_exception(_sharedState->_exceptionPtr);
     }
@@ -77,19 +72,18 @@ class Awaitable {
     }
   }
 
- private:
+private:
   std::function<T()> _func;
   std::shared_ptr<SharedState> _sharedState;
 };
-template <>
-class Awaitable<void> {
+template <> class Awaitable<void> {
   struct SharedState {
     std::exception_ptr _exceptionPtr = nullptr;
     std::coroutine_handle<> handle = nullptr;
   };
 
- public:
-  Awaitable(std::function<void()>&& func)
+public:
+  Awaitable(std::function<void()> &&func)
       : _func(std::move(func)), _sharedState(std::make_shared<SharedState>()) {}
 
   bool await_ready() {
@@ -109,25 +103,22 @@ class Awaitable<void> {
     auto state = _sharedState;
     auto func = std::move(_func);
 
-    (void)thread_pool.enqueue([state, func]() {
-      while (true) {
-        try {
-          // Call the function and resume the coroutine
-          func();
-          break;
-        } catch (const std::system_error& e) {
-          // Handle exception
-          if (e.code() != std::errc::operation_would_block &&
-              e.code() != std::errc::resource_unavailable_try_again) {
-            state->_exceptionPtr = std::current_exception();
-          }
-        } catch (const std::exception& e) {
-          // Handle other exceptions
+    event_manager::EventManager::getInstance().addEvent([func, state] {
+      try {
+        func();
+      } catch (const std::system_error &e) {
+        // Handle exception
+        if (e.code() != std::errc::operation_would_block &&
+            e.code() != std::errc::resource_unavailable_try_again) {
           state->_exceptionPtr = std::current_exception();
+        } else {
+          // readd to the event queue
+          event_manager::EventManager::getInstance().addEvent(
+              [func, state] { func(); });
         }
-      }
-      if (!state->handle.done()) {
-        state->handle.resume();
+      } catch (const std::exception &e) {
+        // Handle other exceptions
+        state->_exceptionPtr = std::current_exception();
       }
     });
   }
@@ -138,8 +129,8 @@ class Awaitable<void> {
     }
   }
 
- private:
+private:
   std::function<void()> _func;
   std::shared_ptr<SharedState> _sharedState;
 };
-}  // namespace qabot::socket
+} // namespace qabot::awaitable
