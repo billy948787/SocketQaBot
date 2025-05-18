@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "socket/windows_socket_impl.hpp"
 
 namespace qabot::socket {
@@ -251,3 +252,4 @@ void WindowsSocketImpl::close() {
 }
 
 } // namespace qabot::socket
+#endif
