@@ -34,31 +34,7 @@ public:
 
     _sharedState->handle = handle;
 
-    auto state = _sharedState;
-    auto func = std::move(_func);
-
-    event_manager::EventManager::getInstance().addEvent(
-        [state, func]() mutable {
-          try {
-            // Call the function and resume the coroutine
-            state->_result.emplace(std::move(func()));
-          } catch (const std::system_error &e) {
-            // Handle exception
-            if (e.code() != std::errc::operation_would_block &&
-                e.code() != std::errc::resource_unavailable_try_again) {
-              state->_exceptionPtr = std::current_exception();
-            }
-          } catch (const std::exception &e) {
-            // Handle other exceptions
-            state->_exceptionPtr = std::current_exception();
-          }
-
-          if (!state->handle.done()) {
-            state->handle.resume();
-          }
-        });
-
-    // Call the function with the provided arguments
+    _submitToEventLoop();
   }
 
   T &await_resume() {
@@ -75,6 +51,40 @@ public:
 private:
   std::function<T()> _func;
   std::shared_ptr<SharedState> _sharedState;
+
+  void _submitToEventLoop() {
+    // Submit the function to the event loop
+    event_manager::EventManager::getInstance().addEvent([this]() mutable {
+      try {
+        _sharedState->_result.emplace(std::move(_func()));
+
+      } catch (const std::system_error &e) {
+        // Handle exception
+        if (e.code() == std::errc::operation_would_block ||
+            e.code() == std::errc::resource_unavailable_try_again ||
+            e.code() == std::errc::connection_already_in_progress
+#ifdef _WIN32
+            || e.code() == static_cast<std::errc>(WSAEWOULDBLOCK) ||
+            e.code() == static_cast<std::errc>(WSAEALREADY)
+#endif
+        ) {
+          _submitToEventLoop();
+
+          return;
+
+        } else {
+          _sharedState->_exceptionPtr = std::current_exception();
+        }
+      } catch (const std::exception &e) {
+        // Handle other exceptions
+        _sharedState->_exceptionPtr = std::current_exception();
+      }
+
+      if (_sharedState->handle) {
+        _sharedState->handle.resume();
+      }
+    });
+  }
 };
 template <> class Awaitable<void> {
   struct SharedState {
@@ -100,27 +110,8 @@ public:
     }
 
     _sharedState->handle = handle;
-    auto state = _sharedState;
-    auto func = std::move(_func);
 
-    event_manager::EventManager::getInstance().addEvent([func, state] {
-      try {
-        func();
-      } catch (const std::system_error &e) {
-        // Handle exception
-        if (e.code() != std::errc::operation_would_block &&
-            e.code() != std::errc::resource_unavailable_try_again) {
-          state->_exceptionPtr = std::current_exception();
-        } else {
-          // readd to the event queue
-          event_manager::EventManager::getInstance().addEvent(
-              [func, state] { func(); });
-        }
-      } catch (const std::exception &e) {
-        // Handle other exceptions
-        state->_exceptionPtr = std::current_exception();
-      }
-    });
+    _submitToEventLoop();
   }
 
   void await_resume() {
@@ -132,5 +123,49 @@ public:
 private:
   std::function<void()> _func;
   std::shared_ptr<SharedState> _sharedState;
+
+  void _submitToEventLoop() {
+    // Submit the function to the event loop
+    event_manager::EventManager::getInstance().addEvent([this]() mutable {
+      try {
+        _func();
+        if (_sharedState->handle) {
+          _sharedState->handle.resume();
+        }
+      } catch (const std::system_error &e) {
+        // Handle exception
+        if (e.code() == std::errc::operation_would_block ||
+            e.code() == std::errc::resource_unavailable_try_again ||
+            e.code() == std::errc::connection_already_in_progress
+#ifdef _WIN32
+            || e.code() == static_cast<std::errc>(WSAEWOULDBLOCK) ||
+            e.code() == static_cast<std::errc>(WSAEALREADY)
+#endif
+        ) {
+          _submitToEventLoop();
+
+          return;
+
+        } else if (e.code() == std::errc::already_connected
+#ifdef _WIN32
+                   || e.code() == static_cast<std::errc>(WSAEISCONN)
+#endif
+        ) {
+
+          // do nothing
+
+        } else {
+          _sharedState->_exceptionPtr = std::current_exception();
+        }
+      } catch (const std::exception &e) {
+        // Handle other exceptions
+        _sharedState->_exceptionPtr = std::current_exception();
+      }
+
+      if (_sharedState->handle) {
+        _sharedState->handle.resume();
+      }
+    });
+  }
 };
 } // namespace qabot::awaitable

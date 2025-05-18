@@ -6,6 +6,8 @@
 
 int main() {
   // Start the server
+  qabot::event_manager::EventManager::getInstance();
+
   qabot::server::Server::getInstance().start();
 
   // Keep the main thread alive

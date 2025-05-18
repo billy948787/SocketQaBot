@@ -52,9 +52,7 @@ template <SocketImplConcept PlatformImpl> class Socket {
 public:
   Socket(TransportProtocol protocol, IPVersion ipVersion)
       : _protocol(protocol), _ipVersion(ipVersion),
-        _platformImpl(protocol, ipVersion) {
-    _platformImpl.init();
-  }
+        _platformImpl(protocol, ipVersion) {}
   Socket(Socket &&other) noexcept
       : _protocol(other._protocol), _ipVersion(other._ipVersion),
         _platformImpl(std::move(other._platformImpl)) {}

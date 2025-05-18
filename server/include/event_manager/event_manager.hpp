@@ -22,13 +22,17 @@ public:
   EventManager(EventManager &&) = delete;
   EventManager &operator=(EventManager &&) = delete;
 
-  void addEvent(std::function<void()> event) { _eventQueue.push(event); }
+  void addEvent(std::function<void()> event) {
+    _eventQueue.push(event);
+    _taskCondtion.notify_all();
+  }
 
 private:
   EventManager() {
-    _workers.reserve(std::thread::hardware_concurrency());
-    for (auto &worker : _workers) {
-      _workers.emplace_back([this] { workerLoop(); });
+    const int numThreads = std::thread::hardware_concurrency();
+
+    for (int i = 0; i < numThreads; ++i) {
+      _workers.emplace_back([this] { _workerLoop(); });
     }
   }
   ~EventManager() {
@@ -42,7 +46,7 @@ private:
     _workers.clear();
   }
 
-  void workerLoop() {
+  void _workerLoop() {
     while (_isRunning) {
       {
         std::unique_lock<std::mutex> lock(_taskMutex);
@@ -58,11 +62,9 @@ private:
         auto event = std::move(_eventQueue.tryPop());
 
         if (event.has_value()) {
-          try {
-            event.value()();
-          } catch (const std::exception &e) {
-            throw;
-          }
+
+          // call the eventss
+          event.value()();
         }
       }
     }
