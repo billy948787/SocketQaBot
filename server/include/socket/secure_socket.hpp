@@ -1,8 +1,14 @@
 #pragma once
 
+#include <openssl/err.h>
 #include <openssl/ssl.h>
 
 #include "socket.hpp"
+#include <cerrno>
+#include <cstring>
+#include <exception>
+#include <stdexcept>
+#include <system_error>
 #include <vector>
 
 namespace qabot::socket {
@@ -42,7 +48,14 @@ public:
 
   void send(const std::string &data) {
     if (SSL_write(_ssl, data.c_str(), data.size()) <= 0) {
-      throw std::runtime_error("Failed to send data");
+      if (SSL_get_error(_ssl, -1) == SSL_ERROR_WANT_WRITE) {
+        // Handle non-blocking write
+        throw std::system_error{std::errc::operation_would_block,
+                                std::generic_category(),
+                                "Non-blocking write would block"};
+      } else {
+        throw std::runtime_error("Failed to send data over SSL");
+      }
     }
   }
 
@@ -50,7 +63,14 @@ public:
     std::vector<char> buffer(size);
     int bytesReceived = SSL_read(_ssl, buffer.data(), size);
     if (bytesReceived <= 0) {
-      throw std::runtime_error("Failed to receive data");
+      if (SSL_get_error(_ssl, bytesReceived) == SSL_ERROR_WANT_READ) {
+        // Handle non-blocking read
+        throw std::system_error{std::errc::operation_would_block,
+                                std::generic_category(),
+                                "Non-blocking read would block"};
+      } else {
+        throw std::runtime_error("Failed to receive data over SSL");
+      }
     }
     return std::string(buffer.data(), bytesReceived);
   }

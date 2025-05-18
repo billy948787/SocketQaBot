@@ -43,7 +43,7 @@ HttpRequest parseRequest(const std::string &rawHttp) {
       break; // End of headers
     }
     if (key.empty() || value.empty()) {
-      break;
+      continue;
     }
 
     // remove ":" from key

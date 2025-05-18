@@ -83,9 +83,12 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
         break;
       }
 
+      std::cout << clientMessage
+                << std::endl;
+
       auto httpRequest = qabot::http::parseRequest(clientMessage);
 
-      auto jsonMessage = nlohmann::json::parse(httpRequest.body);
+            auto jsonMessage = nlohmann::json::parse(httpRequest.body);
 
       std::string modelName = jsonMessage["model_name"];
       std::string apiKey = jsonMessage["api_key"];

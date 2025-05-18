@@ -106,7 +106,8 @@ void WindowsSocketImpl::send(const std::string &message) {
   int bytesSent = ::send(_socket, message.c_str(), message.size(), 0);
   if (bytesSent == SOCKET_ERROR) {
     std::cerr << "Send error: " << WSAGetLastError() << std::endl;
-    throw std::runtime_error("Failed to send message");
+    throw std::system_error(WSAGetLastError(), std::generic_category(),
+                            "Failed to send message");
   }
 }
 
