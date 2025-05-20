@@ -13,8 +13,12 @@ dependencies:
   flutter_bloc: ^9.1.0
   shared_preferences: ^2.2.3
   flutter_secure_storage: ^9.0.0 # Add this line
+  path_provider: ^2.1.1 # Add this line for file storage
 
-  flutter_markdown: ^0.6.20+2 # Add this line for Markdown rendering
+  flutter_markdown: ^0.6.20+2
+  uuid: ^4.5.1
+  flutter_tts: ^4.2.2
+  speech_to_text: ^7.0.0
 
 dev_dependencies:
   flutter_test:

@@ -16,7 +16,6 @@ public:
     return instance;
   }
 
-  // 禁止複製和移動
   EventManager(const EventManager &) = delete;
   EventManager &operator=(const EventManager &) = delete;
   EventManager(EventManager &&) = delete;
@@ -31,7 +30,7 @@ private:
   EventManager() {
     const int numThreads = std::thread::hardware_concurrency();
 
-    for (int i = 0; i < numThreads; ++i) {
+    for (int i = 0; i < 1; ++i) {
       _workers.emplace_back([this] { _workerLoop(); });
     }
   }
@@ -48,24 +47,24 @@ private:
 
   void _workerLoop() {
     while (_isRunning) {
+
       {
         std::unique_lock<std::mutex> lock(_taskMutex);
         if (_eventQueue.empty()) {
           _taskCondtion.wait(
               lock, [this] { return !_isRunning || !_eventQueue.empty(); });
         }
+      }
 
-        if (!_isRunning) {
-          break;
-        }
+      if (!_isRunning) {
+        break;
+      }
 
-        auto event = std::move(_eventQueue.tryPop());
+      auto event = std::move(_eventQueue.tryPop());
 
-        if (event.has_value()) {
-
-          // call the eventss
-          event.value()();
-        }
+      if (event.has_value()) {
+        // call the events
+        event.value()();
       }
     }
   }

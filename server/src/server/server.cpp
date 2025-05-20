@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "awaitable/awaitable.hpp"
+#include "env_reader/env_reader.hpp"
 #include "http/http.hpp"
 #include "http/http_parse.hpp"
 #include "http/http_serialize.hpp"
@@ -74,7 +75,7 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
     while (true) {
       auto clientMessage = co_await qabot::awaitable::Awaitable<std::string>(
           [clientSocketPtr]() -> std::string {
-            return clientSocketPtr->receive(1024 * 8);
+            return clientSocketPtr->receive(1024 * 1024 * 80);
           });
 
       if (clientMessage.empty()) {
@@ -83,15 +84,15 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
         break;
       }
 
-      std::cout << clientMessage
-                << std::endl;
+      std::cout << clientMessage << std::endl;
 
       auto httpRequest = qabot::http::parseRequest(clientMessage);
 
-            auto jsonMessage = nlohmann::json::parse(httpRequest.body);
+      auto jsonMessage = nlohmann::json::parse(httpRequest.body);
 
       std::string modelName = jsonMessage["model_name"];
-      std::string apiKey = jsonMessage["api_key"];
+      std::string apiKey =
+          env_reader::EnvReader::getInstance().getEnv("API_KEY");
       std::string prompt = jsonMessage["prompt"];
       std::string message = jsonMessage["message"];
 
@@ -101,19 +102,41 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
       std::string fullUrl = "https://" + std::string(AI_SERVER_URL) +
                             path; // For serializeRequest
 
+      nlohmann::json contentArray = nlohmann::json::array();
+
+      const auto &contextArray = jsonMessage["context"];
+
+      for (const auto &context : contextArray) {
+        for (auto const &[role, text] : context.items()) {
+          contentArray.push_back({
+              {"role", role},
+              {
+                  "parts",
+                  {
+                      {
+                          {"text", text.get<std::string>()},
+                      },
+                  },
+              },
+          });
+        }
+      }
+
+      // push back the last message from user
+      contentArray.push_back({
+          {"role", "user"},
+          {
+              "parts",
+              {
+                  {
+                      {"text", message},
+                  },
+              },
+          },
+      });
       nlohmann::json requestJson = {
-          {"system_instruction",
-           {{"parts", nlohmann::json::array({
-                          {{"text", prompt}} // Use the prompt variable here
-                      })}}},
-          {"contents",
-           nlohmann::json::array(
-               {{// User message object
-                 {"role", "user"},
-                 {"parts",
-                  nlohmann::json::array({
-                      {{"text", message}} // Use the message variable here
-                  })}}})}};
+          {"system_instruction", {{"parts", {{{"text", prompt}}}}}},
+          {"contents", contentArray}};
 
       auto request = qabot::http::serializeRequest(
           qabot::http::RequestMethod::Post,

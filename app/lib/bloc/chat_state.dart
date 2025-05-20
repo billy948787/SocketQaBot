@@ -1,40 +1,49 @@
 part of 'chat_bloc.dart';
 
 abstract class ChatState extends Equatable {
-  final List<String> messages;
-  final String
-      statusMessage; // Optional status message (e.g., Connecting, Disconnected, AI is thinking...)
-  final String apiKey; // Add apiKey field
+  final String? currentChatId; // ID of the currently active chat room
+  final List<String> messages; // Messages for the currentChatId
+  final String statusMessage;
+  final List<ChatRoomInfo> chatRooms; // List of all available chat rooms
 
-  const ChatState(this.messages, this.apiKey, [this.statusMessage = '']);
+  const ChatState(this.messages, this.chatRooms, this.currentChatId,
+      [this.statusMessage = '']);
 
   @override
-  List<Object> get props => [messages, apiKey, statusMessage]; // Add apiKey to props
+  List<Object?> get props =>
+      [currentChatId, messages, statusMessage, chatRooms];
 }
 
 // Initial state
 class ChatInitial extends ChatState {
-  // Corrected constructor: Pass empty list for messages and optional status message
-  const ChatInitial([String statusMessage = '', String apiKey = '']) // Add apiKey parameter
-      : super(const [], apiKey, statusMessage); // Pass apiKey to super
+  const ChatInitial(
+      super.messages, // Messages for the (potentially) initially selected chat
+      super.chatRooms, // Initially loaded chat rooms
+      super.currentChatId, // Initially selected chat ID (can be null)
+      [super.statusMessage = '']);
 }
 
 // State when loading/connecting or waiting for AI response
 class ChatLoading extends ChatState {
-  const ChatLoading(super.messages, super.apiKey, [super.statusMessage = 'Loading...']); // Pass apiKey to super
+  const ChatLoading(super.messages, super.chatRooms, super.currentChatId,
+      [super.statusMessage = 'Loading...']);
 }
 
-// State when connection is established and ready
+// State when connection is established and ready for the current chat
 class ChatConnected extends ChatState {
-  const ChatConnected(super.messages, super.apiKey, [super.statusMessage = 'Connected']); // Pass apiKey to super
+  const ChatConnected(super.messages, super.chatRooms, super.currentChatId,
+      [super.statusMessage = 'Connected']);
 }
 
 // State for errors
 class ChatError extends ChatState {
   final String error;
 
-  const ChatError(super.messages, super.apiKey, this.error, [super.statusMessage = 'Error']); // Pass apiKey to super
+  const ChatError(
+      super.messages, super.chatRooms, super.currentChatId, this.error,
+      [super.statusMessage = 'Error']);
 
   @override
-  List<Object> get props => [messages, apiKey, error, statusMessage]; // Add apiKey to props
+  List<Object?> get props =>
+      [currentChatId, messages, error, statusMessage, chatRooms];
 }

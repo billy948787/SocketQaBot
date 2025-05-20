@@ -12,11 +12,15 @@ UnixSocketImpl::UnixSocketImpl(TransportProtocol protocol, IPVersion ipVersion)
   if (_socket < 0) {
     throw std::runtime_error("Failed to create socket");
   }
+
+  init();
 }
 
 UnixSocketImpl::UnixSocketImpl(const int socket, TransportProtocol protocol,
                                IPVersion ipVersion)
-    : _socket(socket), _protocol(protocol), _ipVersion(ipVersion) {}
+    : _socket(socket), _protocol(protocol), _ipVersion(ipVersion) {
+  init();
+}
 
 UnixSocketImpl::~UnixSocketImpl() {
   // Close socket
@@ -67,9 +71,12 @@ void UnixSocketImpl::connect(const std::string &serverName, const int port) {
   }
 
   if (connectResult != 0) {
-    throw std::system_error(errno, std::generic_category(),
-                            "Failed to connect to " + serverName + ":" +
-                                std::to_string(port));
+    if (errno == EISCONN) {
+    } else {
+      throw std::system_error(errno, std::generic_category(),
+                              "Failed to connect to server: " + serverName +
+                                  ":" + std::to_string(port));
+    }
   }
   freeaddrinfo(addrInfo);
 }
@@ -204,8 +211,6 @@ UnixSocketImpl UnixSocketImpl::accept() {
     clientInfo.port = 0;
   }
   clientInfo.ip = clientIpStr;
-  std::cout << "Accepted connection from " << clientInfo.ip << ":"
-            << clientInfo.port << std::endl;
 
   return UnixSocketImpl(clientSocket, _protocol, _ipVersion);
 }
@@ -222,28 +227,25 @@ void UnixSocketImpl::close() {
   if (_socket >= 0) {
     shutdown(_socket, SHUT_RDWR);
     _socket = -1;
-    std::cout << "Socket closed." << std::endl;
   }
 }
 
 bool UnixSocketImpl::init() {
-  // const int flags = fcntl(_socket, F_GETFL, 0);
-  // if (flags == -1) {
-  //   std::cerr << "Failed to get socket flags: " << strerror(errno)
-  //             << std::endl;
-  //   return false;
-  // }
+  const int flags = fcntl(_socket, F_GETFL, 0);
+  if (flags == -1) {
+    std::cerr << "Failed to get socket flags: " << strerror(errno) << std::endl;
+    return false;
+  }
 
-  // if (flags & O_NONBLOCK) {
-  //   return true;
-  // }
+  if (flags & O_NONBLOCK) {
+    return true;
+  }
 
-  // if (fcntl(_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
-  //   std::cerr << "Failed to set socket to non-blocking: " <<
-  //   strerror(errno)
-  //             << std::endl;
-  //   return false;
-  // }
+  if (fcntl(_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+    std::cerr << "Failed to set socket to non-blocking: " << strerror(errno)
+              << std::endl;
+    return false;
+  }
 
   // std::cout << "Socket set to non-blocking mode." << std::endl;
   return true;

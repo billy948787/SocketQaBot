@@ -21,6 +21,30 @@ public:
 
   bool await_ready() {
     // Check if the socket is ready for I/O operations
+    try {
+      _sharedState->_result.emplace(std::move(_func()));
+      return true;
+    } catch (const std::system_error &e) {
+      if (e.code() == std::errc::operation_would_block ||
+          e.code() == std::errc::resource_unavailable_try_again ||
+          e.code() == std::errc::connection_already_in_progress
+#ifdef _WIN32
+          || e.code() == static_cast<std::errc>(WSAEWOULDBLOCK) ||
+          e.code() == static_cast<std::errc>(WSAEALREADY)
+#endif
+      ) {
+        // Handle non-blocking operation
+        return false;
+      } else {
+        // Handle other exceptions
+        _sharedState->_exceptionPtr = std::current_exception();
+        return true;
+      }
+    } catch (const std::exception &e) {
+      // Handle other exceptions
+      _sharedState->_exceptionPtr = std::current_exception();
+      return true;
+    }
     return false;
   }
 
@@ -68,6 +92,7 @@ private:
             e.code() == static_cast<std::errc>(WSAEALREADY)
 #endif
         ) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
           _submitToEventLoop();
 
           return;
@@ -98,6 +123,30 @@ public:
 
   bool await_ready() {
     // Check if the socket is ready for I/O operations
+    try {
+      _func();
+      return true;
+    } catch (const std::system_error &e) {
+      if (e.code() == std::errc::operation_would_block ||
+          e.code() == std::errc::resource_unavailable_try_again ||
+          e.code() == std::errc::connection_already_in_progress
+#ifdef _WIN32
+          || e.code() == static_cast<std::errc>(WSAEWOULDBLOCK) ||
+          e.code() == static_cast<std::errc>(WSAEALREADY)
+#endif
+      ) {
+        // Handle non-blocking operation
+        return false;
+      } else {
+        // Handle other exceptions
+        _sharedState->_exceptionPtr = std::current_exception();
+        return true;
+      }
+    } catch (const std::exception &e) {
+      // Handle other exceptions
+      _sharedState->_exceptionPtr = std::current_exception();
+      return true;
+    }
     return false;
   }
 
@@ -129,30 +178,22 @@ private:
     event_manager::EventManager::getInstance().addEvent([this]() mutable {
       try {
         _func();
-        if (_sharedState->handle) {
-          _sharedState->handle.resume();
-        }
       } catch (const std::system_error &e) {
         // Handle exception
         if (e.code() == std::errc::operation_would_block ||
             e.code() == std::errc::resource_unavailable_try_again ||
-            e.code() == std::errc::connection_already_in_progress
+            e.code() == std::errc::connection_already_in_progress ||
+            e.code() == std::errc::operation_in_progress
 #ifdef _WIN32
             || e.code() == static_cast<std::errc>(WSAEWOULDBLOCK) ||
             e.code() == static_cast<std::errc>(WSAEALREADY)
 #endif
         ) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
           _submitToEventLoop();
 
           return;
-
-        } else if (e.code() == std::errc::already_connected
-#ifdef _WIN32
-                   || e.code() == static_cast<std::errc>(WSAEISCONN)
-#endif
-        ) {
-
-          // do nothing
 
         } else {
           _sharedState->_exceptionPtr = std::current_exception();

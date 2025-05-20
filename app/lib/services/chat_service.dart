@@ -6,15 +6,24 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Import f
 import 'dart:developer' as dev;
 
 class ChatService {
-  // TODO: Replace with your actual middleware server IP/hostname and port
-  final String _serverHost = '10.201.14.97'; // Example: '192.168.1.100' or 'your-server.com'
-  final int _serverPort = 38763; // Example: 8080
-
   Socket? _socket;
   StreamController<String>? _messageStreamController;
   String _buffer = ''; // To accumulate raw data chunks
-  bool _headersSkipped = false; // Flag to track if HTTP headers have been skipped
-  String _currentPartialJson = ''; // Buffer for potentially incomplete JSON data lines
+  bool _headersSkipped =
+      false; // Flag to track if HTTP headers have been skipped
+  String _currentPartialJson =
+      ''; // Buffer for potentially incomplete JSON data lines
+
+  // Store details of the current connection
+  String _currentConnectedHost = '';
+  int _currentConnectedPort = 0;
+  bool _isSecureConnection = false;
+
+  // Public getters for connection status and details
+  bool get isConnected => _socket != null && _messageStreamController != null;
+  String get currentHost => _currentConnectedHost;
+  int get currentPort => _currentConnectedPort;
+  bool get isSecureConnection => _isSecureConnection;
 
   // Helper method to handle disconnection cleanup
   void _handleDisconnect() {
@@ -28,6 +37,11 @@ class ChatService {
     _buffer = '';
     _headersSkipped = false; // Reset flag
     _currentPartialJson = ''; // Reset partial JSON buffer
+
+    // Reset current connection details
+    _currentConnectedHost = '';
+    _currentConnectedPort = 0;
+    _isSecureConnection = false;
   }
 
   // Method to close the Socket connection
@@ -41,9 +55,14 @@ class ChatService {
       // Ensure stream controller is closed even if socket was never connected or already null
       _messageStreamController?.close();
       _messageStreamController = null;
+      // Also ensure connection details are reset if only stream was open
+      if (_currentConnectedHost.isNotEmpty) {
+        _handleDisconnect();
+      }
     }
+    // These are reset in _handleDisconnect, but good to be explicit if called when _socket is null
     _buffer = '';
-    _currentPartialJson = ''; // Reset partial JSON buffer on close
+    _currentPartialJson = '';
   }
 
   // Method to establish connection and return the stream for responses
@@ -60,20 +79,42 @@ class ChatService {
       dev.log('Attempting to connect to $host:$port...');
     }
 
-    Socket.connect(host, port,
-            timeout: const Duration(seconds: 10))
-        .then((socket) {
+    Future<Socket> socketFuture;
+
+    if (port == 443) {
+      // Assume HTTPS for port 443
+      _isSecureConnection = true;
+      if (kDebugMode) {
+        dev.log('Attempting SecureSocket connection to $host:$port');
+      }
+      // For SecureSocket, the 'host' parameter is used for SNI and certificate validation.
+      // Default certificate validation will be used.
+      socketFuture = SecureSocket.connect(host, port,
+          timeout: const Duration(seconds: 10));
+    } else {
+      _isSecureConnection = false;
+      if (kDebugMode) {
+        dev.log('Attempting plain Socket connection to $host:$port');
+      }
+      socketFuture =
+          Socket.connect(host, port, timeout: const Duration(seconds: 10));
+    }
+
+    socketFuture.then((socket) {
       if (kDebugMode) {
         dev.log(
-            'Connected to: ${socket.remoteAddress.address}:${socket.remotePort}');
+            'Successfully connected to $host:$port ${(_isSecureConnection ? "(Secure)" : "(Plain)")}');
       }
       _socket = socket;
+      _currentConnectedHost = host; // Store the actual host used
+      _currentConnectedPort = port; // Store the actual port used
 
       _socket!.listen(
         (List<int> data) {
           final receivedString = utf8.decode(data);
           if (kDebugMode) {
-            dev.log('Received raw data chunk (visible whitespace): ${receivedString.replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}');
+            dev.log(
+                'Received raw data chunk (visible whitespace): ${receivedString.replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}');
           }
           _buffer += receivedString;
 
@@ -83,10 +124,12 @@ class ChatService {
           if (!_headersSkipped) {
             int headerEndIndex = _buffer.indexOf('\r\n\r\n');
             if (headerEndIndex != -1) {
-              _buffer = _buffer.substring(headerEndIndex + 4); // Skip headers + \r\n\r\n
+              _buffer = _buffer
+                  .substring(headerEndIndex + 4); // Skip headers + \r\n\r\n
               _headersSkipped = true;
               if (kDebugMode) {
-                dev.log('Skipped HTTP headers. Remaining buffer start: "${_buffer.substring(0, (_buffer.length > 100 ? 100 : _buffer.length)).replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}..."');
+                dev.log(
+                    'Skipped HTTP headers. Remaining buffer start: "${_buffer.substring(0, (_buffer.length > 100 ? 100 : _buffer.length)).replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}..."');
               }
             } else {
               // Headers not fully received yet, wait for more data
@@ -105,7 +148,8 @@ class ChatService {
 
             // Extract the line (including potential \r)
             String line = _buffer.substring(0, lineEndIndex + 1);
-            _buffer = _buffer.substring(lineEndIndex + 1); // Consume the line from buffer
+            _buffer = _buffer
+                .substring(lineEndIndex + 1); // Consume the line from buffer
 
             line = line.trim(); // Trim whitespace (\n, \r, spaces)
 
@@ -116,7 +160,7 @@ class ChatService {
             // Ignore empty lines and chunk size lines (heuristic)
             if (line.isEmpty || RegExp(r'^[0-9a-fA-F]+$').hasMatch(line)) {
               if (kDebugMode && line.isNotEmpty) {
-                 dev.log('Ignoring chunk size line: "$line"');
+                dev.log('Ignoring chunk size line: "$line"');
               }
               continue;
             }
@@ -161,30 +205,34 @@ class ChatService {
                 }
                 // Reset partial JSON buffer after successful parse
                 _currentPartialJson = '';
-
               } catch (e) {
                 // If JSON parsing fails, it might be incomplete. Keep accumulating.
                 if (kDebugMode) {
                   // Only dev.log error if it's not an Unterminated string or similar incomplete errors
-                  if (!e.toString().contains('Unterminated string') && !e.toString().contains('Unexpected character') && !e.toString().contains('Expected') ) {
-                     dev.log('JSON parse error (likely incomplete): $e - Current partial JSON: "$_currentPartialJson"');
+                  if (!e.toString().contains('Unterminated string') &&
+                      !e.toString().contains('Unexpected character') &&
+                      !e.toString().contains('Expected')) {
+                    dev.log(
+                        'JSON parse error (likely incomplete): $e - Current partial JSON: "$_currentPartialJson"');
                   } else {
-                     dev.log('JSON likely incomplete, continuing accumulation...');
+                    dev.log(
+                        'JSON likely incomplete, continuing accumulation...');
                   }
                 }
               }
             } else {
-               if (kDebugMode) {
-                 dev.log('Ignoring non-data line: "$line"');
-               }
-               // If we encounter a non-data line after starting to accumulate JSON,
-               // it might indicate an error or unexpected format. Reset partial buffer.
-               if (_currentPartialJson.isNotEmpty) {
-                  if (kDebugMode) {
-                     dev.log('Resetting partial JSON buffer due to non-data line.');
-                  }
-                 _currentPartialJson = '';
-               }
+              if (kDebugMode) {
+                dev.log('Ignoring non-data line: "$line"');
+              }
+              // If we encounter a non-data line after starting to accumulate JSON,
+              // it might indicate an error or unexpected format. Reset partial buffer.
+              if (_currentPartialJson.isNotEmpty) {
+                if (kDebugMode) {
+                  dev.log(
+                      'Resetting partial JSON buffer due to non-data line.');
+                }
+                _currentPartialJson = '';
+              }
             }
           }
           // --- End Enhanced Parsing Logic ---
@@ -209,13 +257,11 @@ class ChatService {
       // This catchError is for errors during the Socket.connect future
     }).catchError((error) {
       if (kDebugMode) {
-        dev.log('Failed to connect: $error');
+        dev.log('Failed to connect to $host:$port: $error');
       }
       _messageStreamController?.addError('Connection failed: $error');
-      _messageStreamController?.close(); // Close stream if connection fails
-      _socket = null; // Ensure socket is null
-      // Re-throw or handle as needed
-      // throw Exception('Failed to connect to socket: $e');
+      // Ensure full cleanup, including resetting connection state variables
+      _handleDisconnect();
     });
 
     return _messageStreamController!.stream;
@@ -225,48 +271,80 @@ class ChatService {
   final _storage = const FlutterSecureStorage();
 
   // Method to send a message over the established connection
-  Future<void> sendMessage({ // Change return type to Future<void>
+  Future<void> sendMessage({
+    // Change return type to Future<void>
+    required List<Map<String, String>> context,
     required String message,
-    required String apiKey, // Accept API key as parameter
+    int? contextLimit, // 新增參數，用於限制上下文訊息數量
     String prompt = '使用繁體中文回答',
     String modelName = 'gemini-2.0-flash',
-  }) async { // Add async keyword
-    if (_socket == null ||
-        _messageStreamController == null ||
-        _messageStreamController!.isClosed) {
+  }) async {
+    // Add async keyword
+    if (_socket == null || _currentConnectedHost.isEmpty) {
       if (kDebugMode) {
-        dev.log('Socket not connected or stream closed. Cannot send message.');
+        dev.log(
+            'Socket not connected or host details missing. Cannot send message.');
       }
       throw Exception('Socket is not connected. Call connectAndListen first.');
     }
 
-    final header = 'POST / HTTP/1.1\r\n'
-        'Host: $_serverHost:$_serverPort\r\n'
-        'Connection: keep-alive\r\n'
-        'Accept: application/json\r\n'
-        'Accept-Encoding: gzip, deflate, br\r\n'
-        'Accept-Language: zh-TW,zh;q=0.9,en;q=0.8\r\n'
-        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/\r\n';
+    String hostHeaderValue = _currentConnectedHost;
+    // Append port to Host header if it's not the default for the scheme
+    // HTTP default: 80, HTTPS default: 443
+    if (!((_currentConnectedPort == 80 && !_isSecureConnection) ||
+        (_currentConnectedPort == 443 && _isSecureConnection))) {
+      hostHeaderValue = '$_currentConnectedHost:$_currentConnectedPort';
+    }
 
-    final contentLength = 'Content-Length: ${message.length}\r\n';
-    const endOfHeaders = '\r\n';
+    var contextToSend = [];
 
-    // Construct the payload
+    int contextCount = 0;
+    if (contextLimit == null) {
+      contextLimit = 10; // Default context limit
+    } else {
+      contextLimit = contextLimit == 0 ? context.length : contextLimit;
+    }
 
-    final bodyJson = jsonEncode({
+    for (int i = context.length - 1; i >= 0; i--) {
+      if (contextCount >= contextLimit) {
+        break;
+      }
+      contextToSend.add(context[i]);
+      contextCount++;
+    }
+
+    contextToSend = contextToSend.reversed.toList();
+
+    final Map<String, dynamic> bodyData = {
       'prompt': prompt,
+      'context': contextToSend,
       'model_name': modelName,
       'message': message,
-      'api_key': apiKey, // Use the passed API key
-    });
+    };
+    final String bodyJsonString = jsonEncode(bodyData);
+    final List<int> bodyBytes = utf8
+        .encode(bodyJsonString); // Encode to get byte length for Content-Length
 
-    final payload = '$header$contentLength$endOfHeaders$bodyJson';
+    // Construct headers
+    // Ensure the path (e.g., "/") is correct for your server endpoint
+    final String requestHeader = 'POST / HTTP/1.1'
+        '\r\nHost: $hostHeaderValue'
+        '\r\nContent-Type: application/json'
+        '\r\nContent-Length: ${bodyBytes.length}'
+        '\r\nConnection: keep-alive'
+        '\r\nAccept: application/json'
+        '\r\nUser-Agent: Mozilla/1.0';
+    final String headersString = requestHeader;
+    // The full request includes headers, an empty line (CRLF), and then the body.
+    final String fullRequest = '$headersString\r\n\r\n$bodyJsonString';
 
     if (kDebugMode) {
-      dev.log('Sending message via Socket: $payload');
+      dev.log('--- Start Request ---');
+      dev.log(fullRequest);
+      dev.log('--- End Request ---');
     }
-    // Add a newline delimiter, assuming the server expects it. Adjust if needed.
-    _socket!.write('$payload\n');
-    _socket!.flush(); // Ensure data is sent immediately
+
+    _socket!.write(fullRequest);
+    await _socket!.flush(); // Ensure data is sent immediately
   }
 }

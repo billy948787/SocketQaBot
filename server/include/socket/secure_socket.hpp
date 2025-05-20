@@ -39,40 +39,64 @@ public:
   }
 
   void connect(const std::string &host, int port) {
-    _socket.connect(host, port);
     SSL_set_fd(_ssl, _socket.getSocketFD());
-    if (SSL_connect(_ssl) <= 0) {
-      throw std::runtime_error("Failed to establish SSL connection");
+    _socket.connect(host, port);
+    ERR_clear_error();
+    auto ret = SSL_connect(_ssl);
+
+    if (ret <= 0) {
+      if (SSL_get_error(_ssl, ret) == SSL_ERROR_WANT_WRITE ||
+          SSL_get_error(_ssl, ret) == SSL_ERROR_WANT_READ) {
+        // Handle non-blocking connect
+        throw std::system_error{
+            static_cast<int>(std::errc::operation_would_block),
+            std::generic_category(), "Non-blocking connect would block"};
+      } else {
+        std::cerr << "SSL error: " << SSL_get_error(_ssl, ret) << std::endl;
+        throw std::runtime_error("Failed to establish SSL connection");
+      }
     }
   }
 
   void send(const std::string &data) {
-    if (SSL_write(_ssl, data.c_str(), data.size()) <= 0) {
-      if (SSL_get_error(_ssl, -1) == SSL_ERROR_WANT_WRITE) {
+    ERR_clear_error();
+    auto ret = SSL_write(_ssl, data.c_str(), data.size());
+    if (ret <= 0) {
+      if (SSL_get_error(_ssl, ret) == SSL_ERROR_WANT_WRITE ||
+          SSL_get_error(_ssl, ret) == SSL_ERROR_WANT_READ) {
         // Handle non-blocking write
-        throw std::system_error{std::errc::operation_would_block,
-                                std::generic_category(),
-                                "Non-blocking write would block"};
+        throw std::system_error{
+            static_cast<int>(std::errc::operation_would_block),
+            std::generic_category(), "Non-blocking write would block"};
       } else {
-        throw std::runtime_error("Failed to send data over SSL");
+        long error_code = ERR_get_error();
+        char err_buf[256];
+        ERR_error_string_n(error_code, err_buf, sizeof(err_buf));
+        std::cerr << "SSL_write error: " << SSL_get_error(_ssl, ret)
+                  << ", OpenSSL error: " << err_buf << std::endl;
+        throw std::runtime_error(std::string("Failed to send data over SSL: ") +
+                                 err_buf);
       }
     }
   }
 
   std::string receive(size_t size) {
     std::vector<char> buffer(size);
-    int bytesReceived = SSL_read(_ssl, buffer.data(), size);
-    if (bytesReceived <= 0) {
-      if (SSL_get_error(_ssl, bytesReceived) == SSL_ERROR_WANT_READ) {
+    ERR_clear_error();
+    int ret = SSL_read(_ssl, buffer.data(), size);
+    if (ret <= 0) {
+      if (SSL_get_error(_ssl, ret) == SSL_ERROR_WANT_READ ||
+          SSL_get_error(_ssl, ret) == SSL_ERROR_WANT_WRITE) {
         // Handle non-blocking read
-        throw std::system_error{std::errc::operation_would_block,
-                                std::generic_category(),
-                                "Non-blocking read would block"};
+        throw std::system_error{
+            static_cast<int>(std::errc::operation_would_block),
+            std::generic_category(), "Non-blocking read would block"};
       } else {
+        std::cerr << "SSL error: " << SSL_get_error(_ssl, ret) << std::endl;
         throw std::runtime_error("Failed to receive data over SSL");
       }
     }
-    return std::string(buffer.data(), bytesReceived);
+    return std::string(buffer.data(), ret);
   }
 
 private:
