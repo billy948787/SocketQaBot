@@ -7,7 +7,9 @@ class TTSButton extends StatefulWidget {
   final Color? color;
   final double size;
 
-  const TTSButton({
+  var isPlaying = false;
+
+  TTSButton({
     Key? key,
     required this.text,
     required this.ttsService,
@@ -26,20 +28,21 @@ class _TTSButtonState extends State<TTSButton> {
   void initState() {
     super.initState();
     _listener = () {
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     };
-    widget.ttsService.addListener(_listener);
   }
 
   @override
   void dispose() {
-    widget.ttsService.removeListener(_listener);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isPlaying = widget.ttsService.isPlaying;
+    final isPlaying =
+        widget.ttsService.isPlaying && widget.ttsService.listener == _listener;
     return IconButton(
       icon: Icon(
         isPlaying ? Icons.stop : Icons.volume_up,
@@ -57,6 +60,7 @@ class _TTSButtonState extends State<TTSButton> {
           } else if (textToSpeak.startsWith('AI: ')) {
             textToSpeak = textToSpeak.substring(4);
           }
+          widget.ttsService.setListener(_listener);
           await widget.ttsService.speak(textToSpeak);
         }
       },

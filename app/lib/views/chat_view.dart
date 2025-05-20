@@ -299,21 +299,19 @@ class _ChatViewState extends State<ChatView> {
             child: BlocConsumer<ChatBloc, ChatState>(
               // Use BlocConsumer to listen for state changes for scrolling
               listener: (context, state) {
-                // Scroll to bottom whenever messages change (in ChatConnected or ChatError state)
+                // Scroll to bottom whenever messages change
                 if (state is ChatConnected || state is ChatError) {
                   _scrollToBottom();
                 }
                 // Show error messages from the state
                 if (state is ChatError) {
-                  // Avoid showing snackbar for connection errors if already shown in AppBar
-                  if (!state.error.contains("Connection Failed") &&
-                      !state.error.contains("Not connected")) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text(state.error),
-                          backgroundColor: Colors.red),
-                    );
-                  }
+                  // 顯示所有錯誤訊息
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(state.error),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
                 if (state is ChatInitial) {
                   context.read<ChatBloc>().add(ConnectWebSocketEvent(

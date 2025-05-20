@@ -232,7 +232,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           add(ReceiveMessageEvent(message));
         },
         onError: (error) {
-          add(WebSocketConnectionFailedEvent(error.toString()));
+          // 當 SSE 或自定義錯誤發生，當作訊息顯示
+          add(ReceiveMessageEvent('Error: ${error.toString()}'));
         },
         onDone: () {
           add(const WebSocketDisconnectedEvent());

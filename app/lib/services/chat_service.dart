@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io'; // Import dart:io for Socket
 import 'package:flutter/foundation.dart'; // For kDebugMode
-import 'package:flutter_secure_storage/flutter_secure_storage.dart'; // Import flutter_secure_storage
 import 'dart:developer' as dev;
 
 class ChatService {
@@ -124,8 +123,26 @@ class ChatService {
           if (!_headersSkipped) {
             int headerEndIndex = _buffer.indexOf('\r\n\r\n');
             if (headerEndIndex != -1) {
-              _buffer = _buffer
-                  .substring(headerEndIndex + 4); // Skip headers + \r\n\r\n
+              // 解析 HTTP 狀態
+              String headerSection = _buffer.substring(0, headerEndIndex);
+              List<String> headerLines = headerSection.split('\r\n');
+              if (headerLines.isNotEmpty) {
+                final statusLine = headerLines[0];
+                final match = RegExp(r'HTTP/\d+\.\d+\s+(\d+)\s*(.*)')
+                    .firstMatch(statusLine);
+                if (match != null) {
+                  final statusCode = int.tryParse(match.group(1)!);
+                  final reasonPhrase = match.group(2);
+                  if (statusCode == null || statusCode != 200) {
+                    _messageStreamController
+                        ?.addError('HTTP error: $statusCode $reasonPhrase');
+                    _handleDisconnect();
+                    return;
+                  }
+                }
+              }
+              _buffer =
+                  _buffer.substring(headerEndIndex + 4); // Skip headers + CRLF
               _headersSkipped = true;
               if (kDebugMode) {
                 dev.log(
@@ -167,56 +184,38 @@ class ChatService {
 
             // Process 'data:' lines
             if (line.startsWith('data:')) {
-              String jsonDataPart = line.substring('data:'.length).trim();
-              if (kDebugMode) {
-                dev.log('Found data line content: "$jsonDataPart"');
-              }
-
-              // Append to partial JSON buffer
+              final jsonDataPart = line.substring('data:'.length).trim();
               _currentPartialJson += jsonDataPart;
-
-              // Attempt to parse the accumulated JSON
               try {
-                var jsonData = jsonDecode(_currentPartialJson);
-                // If parsing succeeds, we have a complete JSON object
-                if (kDebugMode) {
-                  dev.log('Successfully parsed JSON: $_currentPartialJson');
-                }
-
-                // Extract text from Gemini structure
-                if (jsonData is Map && jsonData.containsKey('candidates')) {
-                  var candidates = jsonData['candidates'] as List?;
+                final jsonData = jsonDecode(_currentPartialJson);
+                if (jsonData is Map && jsonData.containsKey('error')) {
+                  final errMsg =
+                      jsonData['error']?.toString() ?? 'Unknown error';
+                  _messageStreamController?.addError(errMsg);
+                } else if (jsonData is Map &&
+                    jsonData.containsKey('candidates')) {
+                  final candidates = jsonData['candidates'] as List?;
                   if (candidates != null && candidates.isNotEmpty) {
-                    var content = candidates[0]['content'] as Map?;
-                    if (content != null && content.containsKey('parts')) {
-                      var parts = content['parts'] as List?;
-                      if (parts != null && parts.isNotEmpty) {
-                        var text = parts[0]['text'] as String?;
-                        if (text != null && text.isNotEmpty) {
-                          if (kDebugMode) {
-                            dev.log('Extracted text: "$text"');
-                          }
-                          // Add extracted text to the stream
-                          _messageStreamController?.add(text);
-                        }
-                      }
+                    final content = candidates[0]['content'] as Map?;
+                    final parts = content?['parts'] as List?;
+                    final text = parts != null && parts.isNotEmpty
+                        ? parts[0]['text'] as String?
+                        : null;
+                    if (text != null && text.isNotEmpty) {
+                      _messageStreamController?.add(text);
                     }
                   }
                 }
                 // Reset partial JSON buffer after successful parse
                 _currentPartialJson = '';
               } catch (e) {
-                // If JSON parsing fails, it might be incomplete. Keep accumulating.
                 if (kDebugMode) {
-                  // Only dev.log error if it's not an Unterminated string or similar incomplete errors
+                  // JSON 可能不完整，繼續累積
                   if (!e.toString().contains('Unterminated string') &&
                       !e.toString().contains('Unexpected character') &&
                       !e.toString().contains('Expected')) {
                     dev.log(
-                        'JSON parse error (likely incomplete): $e - Current partial JSON: "$_currentPartialJson"');
-                  } else {
-                    dev.log(
-                        'JSON likely incomplete, continuing accumulation...');
+                        'JSON parse error: $e - buffer:"$_currentPartialJson"');
                   }
                 }
               }
@@ -224,8 +223,7 @@ class ChatService {
               if (kDebugMode) {
                 dev.log('Ignoring non-data line: "$line"');
               }
-              // If we encounter a non-data line after starting to accumulate JSON,
-              // it might indicate an error or unexpected format. Reset partial buffer.
+              // Reset buffer on unexpected lines
               if (_currentPartialJson.isNotEmpty) {
                 if (kDebugMode) {
                   dev.log(
@@ -266,9 +264,6 @@ class ChatService {
 
     return _messageStreamController!.stream;
   }
-
-  // Create storage
-  final _storage = const FlutterSecureStorage();
 
   // Method to send a message over the established connection
   Future<void> sendMessage({
