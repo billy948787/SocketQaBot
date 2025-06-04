@@ -33,11 +33,8 @@ qabot::task::Task<void> Server::_serverLoop() {
 
   while (true) {
     try {
-      auto client = std::move(co_await qabot::awaitable::Awaitable<
-                              qabot::socket::Socket<SocketImpl>>(
-          [this]() -> qabot::socket::Socket<SocketImpl> {
-            return _serverSocket.accept();
-          }));
+      auto client = std::move(co_await qabot::awaitable::Awaitable(
+          [this]() { return _serverSocket.accept(); }));
 
       auto clientTask = _clientLoop(std::move(client));
       // move clientTask into scopeManager
@@ -73,7 +70,7 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
 
     // Keep receiving messages from the client
     while (true) {
-      auto clientMessage = co_await qabot::awaitable::Awaitable<std::string>(
+      auto clientMessage = co_await qabot::awaitable::Awaitable(
           [clientSocketPtr]() -> std::string {
             return clientSocketPtr->receive(1024 * 1024 * 80);
           });
@@ -149,15 +146,15 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
 
       std::cout << "Request: " << request << std::endl;
 
-      co_await qabot::awaitable::Awaitable<void>(
+      co_await qabot::awaitable::Awaitable(
           [sendingSocketPtr, request]() { sendingSocketPtr->send(request); });
 
       // start parsing the header line by line
       while (true) {
         std::string headerLine;
         while (true) {
-          auto nowChar = co_await qabot::awaitable::Awaitable<char>(
-              [sendingSocketPtr]() -> char {
+          auto nowChar =
+              co_await qabot::awaitable::Awaitable([sendingSocketPtr]() {
                 char result = sendingSocketPtr->receive(1)[0];
 
                 return result;
@@ -232,7 +229,7 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
           // read the chunk size
           std::string chunkSizeLine;
           while (true) {
-            auto nowChar = co_await qabot::awaitable::Awaitable<char>(
+            auto nowChar = co_await qabot::awaitable::Awaitable(
                 [sendingSocketPtr]() -> char {
                   return sendingSocketPtr->receive(1)[0];
                 });
@@ -245,15 +242,15 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
             }
           }
 
-          co_await qabot::awaitable::Awaitable<void>(
+          co_await qabot::awaitable::Awaitable(
               [clientSocketPtr, chunkSizeLine]() {
                 clientSocketPtr->send(chunkSizeLine + "\r\n");
               });
 
           if (chunkSizeLine == "0") {
-            co_await qabot::awaitable::Awaitable<void>(
+            co_await qabot::awaitable::Awaitable(
                 [sendingSocketPtr]() { sendingSocketPtr->receive(2); });
-            co_await qabot::awaitable::Awaitable<void>(
+            co_await qabot::awaitable::Awaitable(
                 [clientSocketPtr]() { clientSocketPtr->send("\r\n"); });
             break; // End of chunks
           }
@@ -265,32 +262,29 @@ Server::_clientLoop(qabot::socket::Socket<SocketImpl> &&clientSocket) {
           std::string chunkData;
 
           while (totalBytesRead < chunkSize) { // Read the chunk data
-            auto chunkFragment =
-                co_await qabot::awaitable::Awaitable<std::string>(
-                    [sendingSocketPtr,
-                     byteToRead = chunkSize - totalBytesRead]() {
-                      return sendingSocketPtr->receive(byteToRead);
-                    });
+            auto chunkFragment = co_await qabot::awaitable::Awaitable(
+                [sendingSocketPtr, byteToRead = chunkSize - totalBytesRead]() {
+                  return sendingSocketPtr->receive(byteToRead);
+                });
             totalBytesRead += chunkFragment.size();
             chunkData += chunkFragment;
           }
 
           // send the chunkData to client
 
-          co_await qabot::awaitable::Awaitable<void>(
-              [clientSocketPtr, chunkData]() {
-                clientSocketPtr->send(chunkData + "\r\n");
-              });
+          co_await qabot::awaitable::Awaitable([clientSocketPtr, chunkData]() {
+            clientSocketPtr->send(chunkData + "\r\n");
+          });
 
           responseBody += chunkData;
 
           // read the trailing CRLF
-          co_await qabot::awaitable::Awaitable<void>(
+          co_await qabot::awaitable::Awaitable(
               [sendingSocketPtr]() { sendingSocketPtr->receive(2); });
         }
       } else {
         // If not chunked, read the response body directly
-        auto body = co_await qabot::awaitable::Awaitable<std::string>(
+        auto body = co_await qabot::awaitable::Awaitable(
             [sendingSocketPtr]() -> std::string {
               return sendingSocketPtr->receive(1024 * 8);
             });

@@ -29,6 +29,19 @@ class TTSService {
     await _flutterTts.setSpeechRate(0.5); // 較慢的語速，範圍通常是 0.0-1.0
     await _flutterTts.setVolume(1.0); // 最大音量
     await _flutterTts.setPitch(1.0); // 正常音調
+    await _flutterTts.setSharedInstance(true);
+
+    _flutterTts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playAndRecord,
+        [
+          IosTextToSpeechAudioCategoryOptions.allowAirPlay,
+          IosTextToSpeechAudioCategoryOptions.duckOthers,
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker
+        ],
+        IosTextToSpeechAudioMode.voicePrompt);
 
     _flutterTts.setCompletionHandler(() {
       _isPlaying = false;

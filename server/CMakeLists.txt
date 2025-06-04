@@ -10,8 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 add_compile_options(
-    -fexperimental-library
-    -save-temps
+    # -fexperimental-library
+    # -save-temps
 )
 endif()
 

@@ -31,7 +31,7 @@ public:
     if (!_ssl) {
       throw std::runtime_error("Failed to create SSL structure");
     }
-  }
+  } 
 
   ~SecureSocket() {
     SSL_free(_ssl);

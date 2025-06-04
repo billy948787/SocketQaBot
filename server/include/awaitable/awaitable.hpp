@@ -4,6 +4,7 @@
 #include <coroutine>
 #include <exception>
 #include <functional>
+#include <type_traits>
 
 #include "socket/socket.hpp"
 
@@ -209,4 +210,8 @@ private:
     });
   }
 };
+
+// let compiler automatically deduce the return type
+template <typename Func>
+Awaitable(Func &&func) -> Awaitable<std::invoke_result_t<std::decay_t<Func>>>;
 } // namespace qabot::awaitable

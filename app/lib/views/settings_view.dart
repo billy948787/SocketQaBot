@@ -77,8 +77,6 @@ class _SettingsViewState extends State<SettingsView> {
                   labelText: 'Server IP',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
               ),
               const SizedBox(height: 20),
               TextFormField(
@@ -88,7 +86,6 @@ class _SettingsViewState extends State<SettingsView> {
                   labelText: 'Server Port',
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.number,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Server Port cannot be empty';

@@ -19,11 +19,11 @@
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
+	<string>????</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>App 需要使用麥克風進行語音辨識</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>App 需要使用語音辨識功能</string>
-	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
