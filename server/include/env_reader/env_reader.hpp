@@ -1,5 +1,6 @@
 #pragma once
 #include <fstream>
+#include <string>
 #include <unordered_map>
 
 namespace qabot::env_reader {

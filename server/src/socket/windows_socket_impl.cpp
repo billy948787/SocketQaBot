@@ -95,9 +95,13 @@ void WindowsSocketImpl::connect(const std::string &serverName, const int port) {
     }
   }
   if (connectResult != 0) {
-    throw std::system_error(WSAGetLastError(), std::generic_category(),
-                            "Failed to connect to " + serverName + ":" +
-                                std::to_string(port));
+    if (WSAGetLastError() == WSAEISCONN) {
+      
+    } else {
+      throw std::system_error(WSAGetLastError(), std::generic_category(),
+                              "Failed to connect to server: " + serverName +
+                                  ":" + std::to_string(port));
+    }
   }
   freeaddrinfo(addrInfo);
 }
